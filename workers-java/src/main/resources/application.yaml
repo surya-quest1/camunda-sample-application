@@ -1,0 +1,15 @@
+camunda:
+  client:
+    mode: self-managed
+    grpc-address: ${ZEEBE_GRPC_ADDRESS:http://localhost:26500}
+    rest-address: ${ZEEBE_REST_ADDRESS:http://localhost:8088}
+    auth:
+      method: ${CAMUNDA_AUTH_METHOD:oidc}   # oidc | basic | none -- matches the intro-phase auth modes
+      client-id: ${CAMUNDA_CLIENT_ID:orchestration}
+      client-secret: ${CAMUNDA_CLIENT_SECRET:secret}
+      token-url: ${CAMUNDA_OAUTH_TOKEN_URL:http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}
+      audience: ${CAMUNDA_TOKEN_AUDIENCE:orchestration-api}
+
+logging:
+  level:
+    com.northwindbank: INFO

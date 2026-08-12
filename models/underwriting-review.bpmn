@@ -1,0 +1,195 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P07" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:message id="Message_ClientResponded" name="ClientResponded">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:process id="underwriting-review" name="Underwriting Review" isExecutable="true">
+    <bpmn:startEvent id="start" name="Case ready for review">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="ut_first_review" />
+    <bpmn:userTask id="ut_first_review" name="Underwriter review">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition assignee="=caseOwnerUserId" candidateGroups="underwriters" />
+        <zeebe:taskSchedule dueDate="=now() + duration(&#34;P2D&#34;)" followUpDate="=now() + duration(&#34;P1D&#34;)" />
+        <zeebe:priorityDefinition priority="70" />
+        <zeebe:formDefinition formId="underwriting-first-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="ut_first_review" targetRef="gw_four_eyes" />
+    <bpmn:exclusiveGateway id="gw_four_eyes" name="Needs second sign-off?" default="f_single_signoff">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f_needs_second</bpmn:outgoing>
+      <bpmn:outgoing>f_single_signoff</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="f_needs_second" name="Over threshold" sourceRef="gw_four_eyes" targetRef="ut_second_review">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=requestedAmount &gt; 250000</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_single_signoff" name="Under threshold" sourceRef="gw_four_eyes" targetRef="gw_wait_outcome" />
+    <bpmn:userTask id="ut_second_review" name="Second underwriter sign-off">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="senior-underwriters" />
+        <zeebe:priorityDefinition priority="80" />
+        <zeebe:formDefinition formId="underwriting-second-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_needs_second</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f3" sourceRef="ut_second_review" targetRef="gw_wait_outcome" />
+    <bpmn:eventBasedGateway id="gw_wait_outcome" name="Wait for outcome">
+      <bpmn:incoming>f_single_signoff</bpmn:incoming>
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+    </bpmn:eventBasedGateway>
+    <bpmn:sequenceFlow id="f4" sourceRef="gw_wait_outcome" targetRef="catch_client_response" />
+    <bpmn:sequenceFlow id="f5" sourceRef="gw_wait_outcome" targetRef="timer_sla" />
+    <bpmn:intermediateCatchEvent id="catch_client_response" name="Client responds">
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f6</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="catch_client_response_def" messageRef="Message_ClientResponded" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f6" sourceRef="catch_client_response" targetRef="end_decided" />
+    <bpmn:intermediateCatchEvent id="timer_sla" name="SLA window">
+      <bpmn:incoming>f5</bpmn:incoming>
+      <bpmn:outgoing>f7</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="timer_sla_def">
+        <bpmn:timeDuration>PT48H</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f7" sourceRef="timer_sla" targetRef="svc_escalate_sla_breach" />
+    <bpmn:serviceTask id="svc_escalate_sla_breach" name="Escalate SLA breach">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="escalate-sla-breach" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f7</bpmn:incoming>
+      <bpmn:outgoing>f8</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f8" sourceRef="svc_escalate_sla_breach" targetRef="end_sla_breach" />
+    <bpmn:endEvent id="end_decided" name="Decision recorded">
+      <bpmn:incoming>f6</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="end_sla_breach" name="SLA breached">
+      <bpmn:incoming>f8</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:boundaryEvent id="boundary_case_sla" name="Case SLA expired" attachedToRef="ut_first_review">
+      <bpmn:outgoing>f9</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="boundary_case_sla_def">
+        <bpmn:timeDuration>P5D</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="svc_case_sla_breach" name="Handle case SLA breach">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="handle-case-sla-breach" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f9</bpmn:incoming>
+      <bpmn:outgoing>f10</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f9" sourceRef="boundary_case_sla" targetRef="svc_case_sla_breach" />
+    <bpmn:endEvent id="end_case_sla" name="Case SLA breach handled">
+      <bpmn:incoming>f10</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f10" sourceRef="svc_case_sla_breach" targetRef="end_case_sla" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_underwriting-review">
+    <bpmndi:BPMNPlane id="BPMNPlane_underwriting-review" bpmnElement="underwriting-review">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ut_first_review_di" bpmnElement="ut_first_review">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_case_sla_di" bpmnElement="boundary_case_sla">
+        <dc:Bounds x="207" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_four_eyes_di" bpmnElement="gw_four_eyes" isMarkerVisible="true">
+        <dc:Bounds x="350" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ut_second_review_di" bpmnElement="ut_second_review">
+        <dc:Bounds x="475" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_wait_outcome_di" bpmnElement="gw_wait_outcome">
+        <dc:Bounds x="650" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="catch_client_response_di" bpmnElement="catch_client_response">
+        <dc:Bounds x="807" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_decided_di" bpmnElement="end_decided">
+        <dc:Bounds x="957" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timer_sla_di" bpmnElement="timer_sla">
+        <dc:Bounds x="807" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_escalate_sla_breach_di" bpmnElement="svc_escalate_sla_breach">
+        <dc:Bounds x="925" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_sla_breach_di" bpmnElement="end_sla_breach">
+        <dc:Bounds x="1107" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_case_sla_breach_di" bpmnElement="svc_case_sla_breach">
+        <dc:Bounds x="325" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_case_sla_di" bpmnElement="end_case_sla">
+        <dc:Bounds x="507" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="350" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f9_di" bpmnElement="f9">
+        <di:waypoint x="225" y="128" />
+        <di:waypoint x="225" y="350" />
+        <di:waypoint x="325" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_needs_second_di" bpmnElement="f_needs_second">
+        <di:waypoint x="400" y="70" />
+        <di:waypoint x="475" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_single_signoff_di" bpmnElement="f_single_signoff">
+        <di:waypoint x="375" y="95" />
+        <di:waypoint x="375" y="140" />
+        <di:waypoint x="675" y="140" />
+        <di:waypoint x="675" y="95" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="575" y="70" />
+        <di:waypoint x="650" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="700" y="70" />
+        <di:waypoint x="807" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="675" y="95" />
+        <di:waypoint x="675" y="210" />
+        <di:waypoint x="807" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="843" y="70" />
+        <di:waypoint x="957" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7">
+        <di:waypoint x="843" y="210" />
+        <di:waypoint x="925" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f8_di" bpmnElement="f8">
+        <di:waypoint x="1025" y="210" />
+        <di:waypoint x="1107" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f10_di" bpmnElement="f10">
+        <di:waypoint x="425" y="350" />
+        <di:waypoint x="507" y="350" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

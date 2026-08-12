@@ -1,0 +1,104 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P02" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:message id="Message_ApplicantEvidenceReceived" name="ApplicantEvidenceReceived">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId + &#34;-&#34; + applicantRef" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:process id="customer-onboarding-kyc" name="Customer Onboarding &#38; KYC" isExecutable="true">
+    <bpmn:startEvent id="start" name="Onboarding requested">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="call_verify_per_applicant" />
+    <bpmn:callActivity id="call_verify_per_applicant" name="Verify each applicant">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="identity-verification" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicant" target="applicant" />
+          <zeebe:input source="=applicationId" target="applicationId" />
+          <zeebe:input source="=applicant.ref" target="applicantRef" />
+          <zeebe:output source="=verificationResult" target="verificationResult" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics>
+        <bpmn:extensionElements>
+          <zeebe:loopCharacteristics inputCollection="=applicants" inputElement="applicant" outputCollection="=verificationResults" outputElement="=verificationResult" />
+        </bpmn:extensionElements>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f2" sourceRef="call_verify_per_applicant" targetRef="call_sanctions" />
+    <bpmn:callActivity id="call_sanctions" name="Sanctions screening">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="sanctions-screening" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicants" target="applicants" />
+          <zeebe:output source="=sanctionsClear" target="sanctionsClear" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f3" sourceRef="call_sanctions" targetRef="catch_extra_evidence" />
+    <bpmn:intermediateCatchEvent id="catch_extra_evidence" name="Extra evidence received">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="catch_extra_evidence_def" messageRef="Message_ApplicantEvidenceReceived" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f4" sourceRef="catch_extra_evidence" targetRef="ut_manual_review" />
+    <bpmn:userTask id="ut_manual_review" name="Manual onboarding review">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="manual-onboarding-review" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f5" sourceRef="ut_manual_review" targetRef="end" />
+    <bpmn:endEvent id="end" name="Onboarding complete">
+      <bpmn:incoming>f5</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_customer-onboarding-kyc">
+    <bpmndi:BPMNPlane id="BPMNPlane_customer-onboarding-kyc" bpmnElement="customer-onboarding-kyc">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_verify_per_applicant_di" bpmnElement="call_verify_per_applicant">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_sanctions_di" bpmnElement="call_sanctions">
+        <dc:Bounds x="325" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="catch_extra_evidence_di" bpmnElement="catch_extra_evidence">
+        <dc:Bounds x="507" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ut_manual_review_di" bpmnElement="ut_manual_review">
+        <dc:Bounds x="625" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="807" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="507" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="543" y="70" />
+        <di:waypoint x="625" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="725" y="70" />
+        <di:waypoint x="807" y="70" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

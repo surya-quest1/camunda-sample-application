@@ -1,0 +1,24 @@
+{
+  "components": [
+    {
+      "label": "Document type",
+      "type": "textfield",
+      "id": "Field_DocumentType",
+      "key": "documentType",
+      "validate": { "required": true }
+    },
+    {
+      "label": "Upload document",
+      "type": "textfield",
+      "id": "Field_DocumentRef",
+      "key": "documentRef",
+      "validate": { "required": true }
+    }
+  ],
+  "schemaVersion": 4,
+  "exporter": { "name": "northwind-reference-app", "version": "1.0" },
+  "type": "default",
+  "id": "document-upload-form",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8"
+}

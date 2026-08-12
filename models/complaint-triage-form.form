@@ -1,0 +1,35 @@
+{
+  "components": [
+    {
+      "label": "Complaint summary",
+      "type": "textarea",
+      "id": "Field_ComplaintSummary",
+      "key": "complaintSummary",
+      "readonly": true
+    },
+    {
+      "label": "Is this a regulatory breach?",
+      "type": "checkbox",
+      "id": "Field_IsBreach",
+      "key": "isRegulatoryBreach"
+    },
+    {
+      "label": "Assigned severity",
+      "type": "select",
+      "id": "Field_Severity",
+      "key": "severity",
+      "values": [
+        { "label": "Low", "value": "low" },
+        { "label": "Standard", "value": "standard" },
+        { "label": "High", "value": "high" }
+      ],
+      "validate": { "required": true }
+    }
+  ],
+  "schemaVersion": 4,
+  "exporter": { "name": "northwind-reference-app", "version": "1.0" },
+  "type": "default",
+  "id": "complaint-triage-form",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8"
+}

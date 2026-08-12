@@ -1,0 +1,156 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P03" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:error id="Error_BureauUnavailable" name="Identity Bureau Unavailable" errorCode="BUREAU_UNAVAILABLE" />
+  <bpmn:message id="Message_SupplementaryEvidence" name="SupplementaryEvidenceReceived">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicantRef" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:process id="identity-verification" name="Identity Verification" isExecutable="true">
+    <bpmn:startEvent id="start" name="Verification requested">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="svc_check_bureau" />
+    <bpmn:serviceTask id="svc_check_bureau" name="Check identity bureau">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="check-identity-bureau" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="svc_check_bureau" targetRef="gw_result" />
+    <bpmn:boundaryEvent id="boundary_bureau_error" name="Bureau unverifiable" attachedToRef="svc_check_bureau">
+      <bpmn:outgoing>f_err1</bpmn:outgoing>
+      <bpmn:errorEventDefinition id="boundary_bureau_error_def" errorRef="Error_BureauUnavailable" />
+    </bpmn:boundaryEvent>
+    <bpmn:userTask id="ut_manual_id_review" name="Manual identity review">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="identity-ops" />
+        <zeebe:priorityDefinition priority="60" />
+        <zeebe:formDefinition formId="identity-manual-review-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_err1</bpmn:incoming>
+      <bpmn:incoming>f_unverified</bpmn:incoming>
+      <bpmn:outgoing>f_err2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f_err1" sourceRef="boundary_bureau_error" targetRef="ut_manual_id_review" />
+    <bpmn:sequenceFlow id="f_err2" sourceRef="ut_manual_id_review" targetRef="call_documents" />
+    <bpmn:boundaryEvent id="boundary_extra_evidence" name="Extra evidence arrives" cancelActivity="false" attachedToRef="svc_check_bureau">
+      <bpmn:outgoing>f_ne1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="boundary_extra_evidence_def" messageRef="Message_SupplementaryEvidence" />
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="svc_record_evidence" name="Record supplementary evidence">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="record-supplementary-evidence" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_ne1</bpmn:incoming>
+      <bpmn:outgoing>f_ne2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f_ne1" sourceRef="boundary_extra_evidence" targetRef="svc_record_evidence" />
+    <bpmn:endEvent id="end_evidence_recorded" name="Evidence recorded">
+      <bpmn:incoming>f_ne2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_ne2" sourceRef="svc_record_evidence" targetRef="end_evidence_recorded" />
+    <bpmn:exclusiveGateway id="gw_result" name="Verified?" default="f_unverified">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f_verified</bpmn:outgoing>
+      <bpmn:outgoing>f_unverified</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:callActivity id="call_documents" name="Collect ID documents">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="document-collection" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicantRef" target="applicantRef" />
+          <zeebe:input source="=requiredDocuments" target="requiredDocuments" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_err2</bpmn:incoming>
+      <bpmn:incoming>f_verified</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f_verified" name="Verified" sourceRef="gw_result" targetRef="call_documents">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=bureauStatus = "verified"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_unverified" name="Unverified" sourceRef="gw_result" targetRef="ut_manual_id_review" />
+    <bpmn:endEvent id="end" name="Verification complete">
+      <bpmn:incoming>f3</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f3" sourceRef="call_documents" targetRef="end" />
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_identity-verification">
+    <bpmndi:BPMNPlane id="BPMNPlane_identity-verification" bpmnElement="identity-verification">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_check_bureau_di" bpmnElement="svc_check_bureau">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_bureau_error_di" bpmnElement="boundary_bureau_error">
+        <dc:Bounds x="190.33333333333334" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_extra_evidence_di" bpmnElement="boundary_extra_evidence">
+        <dc:Bounds x="223.66666666666669" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_result_di" bpmnElement="gw_result" isMarkerVisible="true">
+        <dc:Bounds x="350" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ut_manual_id_review_di" bpmnElement="ut_manual_id_review">
+        <dc:Bounds x="475" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_documents_di" bpmnElement="call_documents">
+        <dc:Bounds x="625" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="807" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_record_evidence_di" bpmnElement="svc_record_evidence">
+        <dc:Bounds x="325" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_evidence_recorded_di" bpmnElement="end_evidence_recorded">
+        <dc:Bounds x="507" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="350" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_err1_di" bpmnElement="f_err1">
+        <di:waypoint x="208.33333333333334" y="128" />
+        <di:waypoint x="208.33333333333334" y="140" />
+        <di:waypoint x="525" y="140" />
+        <di:waypoint x="525" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_ne1_di" bpmnElement="f_ne1">
+        <di:waypoint x="241.66666666666669" y="128" />
+        <di:waypoint x="241.66666666666669" y="210" />
+        <di:waypoint x="325" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_verified_di" bpmnElement="f_verified">
+        <di:waypoint x="375" y="95" />
+        <di:waypoint x="375" y="140" />
+        <di:waypoint x="675" y="140" />
+        <di:waypoint x="675" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_unverified_di" bpmnElement="f_unverified">
+        <di:waypoint x="400" y="70" />
+        <di:waypoint x="475" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_err2_di" bpmnElement="f_err2">
+        <di:waypoint x="575" y="70" />
+        <di:waypoint x="625" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="725" y="70" />
+        <di:waypoint x="807" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_ne2_di" bpmnElement="f_ne2">
+        <di:waypoint x="425" y="210" />
+        <di:waypoint x="507" y="210" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

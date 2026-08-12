@@ -1,0 +1,101 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P15" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:process id="account-closure" name="Account Closure" isExecutable="true">
+    <bpmn:startEvent id="start" name="Closure requested">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="receive_final_statement_ack" />
+    <bpmn:receiveTask id="receive_final_statement_ack" name="Await final statement acknowledgement" messageRef="Message_FinalStatementAcked">
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:receiveTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="receive_final_statement_ack" targetRef="gw_closure_route" />
+    <bpmn:eventBasedGateway id="gw_closure_route" name="Closure route">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+    </bpmn:eventBasedGateway>
+    <bpmn:sequenceFlow id="f3" sourceRef="gw_closure_route" targetRef="catch_client_confirms" />
+    <bpmn:sequenceFlow id="f4" sourceRef="gw_closure_route" targetRef="timer_auto_close" />
+    <bpmn:intermediateCatchEvent id="catch_client_confirms" name="Client confirms closure">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="catch_client_confirms_def" messageRef="Message_ClosureConfirmed" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f5" sourceRef="catch_client_confirms" targetRef="end_confirmed" />
+    <bpmn:intermediateCatchEvent id="timer_auto_close" name="Auto-close window">
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f6</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="timer_auto_close_def">
+        <bpmn:timeDuration>P14D</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f6" sourceRef="timer_auto_close" targetRef="end_auto_closed" />
+    <bpmn:endEvent id="end_confirmed" name="Closed (client confirmed)">
+      <bpmn:incoming>f5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="end_auto_closed" name="Closed (auto)">
+      <bpmn:incoming>f6</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:message id="Message_FinalStatementAcked" name="FinalStatementAcked">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=accountId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:message id="Message_ClosureConfirmed" name="ClosureConfirmed">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=accountId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_account-closure">
+    <bpmndi:BPMNPlane id="BPMNPlane_account-closure" bpmnElement="account-closure">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="receive_final_statement_ack_di" bpmnElement="receive_final_statement_ack">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_closure_route_di" bpmnElement="gw_closure_route">
+        <dc:Bounds x="350" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="catch_client_confirms_di" bpmnElement="catch_client_confirms">
+        <dc:Bounds x="507" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_confirmed_di" bpmnElement="end_confirmed">
+        <dc:Bounds x="657" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timer_auto_close_di" bpmnElement="timer_auto_close">
+        <dc:Bounds x="507" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_auto_closed_di" bpmnElement="end_auto_closed">
+        <dc:Bounds x="657" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="350" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="400" y="70" />
+        <di:waypoint x="507" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="375" y="95" />
+        <di:waypoint x="375" y="210" />
+        <di:waypoint x="507" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="543" y="70" />
+        <di:waypoint x="657" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="543" y="210" />
+        <di:waypoint x="657" y="210" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,35 @@
+{
+  "components": [
+    {
+      "label": "First reviewer decision",
+      "type": "textfield",
+      "id": "Field_FirstDecision",
+      "key": "underwritingDecision",
+      "readonly": true
+    },
+    {
+      "label": "Requested amount",
+      "type": "number",
+      "id": "Field_RequestedAmount",
+      "key": "requestedAmount",
+      "readonly": true
+    },
+    {
+      "label": "Second sign-off",
+      "type": "select",
+      "id": "Field_SecondSignoff",
+      "key": "secondSignoffDecision",
+      "values": [
+        { "label": "Confirm", "value": "confirmed" },
+        { "label": "Overrule", "value": "overruled" }
+      ],
+      "validate": { "required": true }
+    }
+  ],
+  "schemaVersion": 4,
+  "exporter": { "name": "northwind-reference-app", "version": "1.0" },
+  "type": "default",
+  "id": "underwriting-second-review-form",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8"
+}

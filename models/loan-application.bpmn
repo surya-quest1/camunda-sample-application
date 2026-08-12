@@ -1,0 +1,287 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P01" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:message id="Message_ApplicationCancelled" name="ApplicationCancelled">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:error id="Error_UnderwritingDeclined" name="Underwriting Declined" errorCode="UNDERWRITING_DECLINED" />
+  <bpmn:process id="loan-application" name="Loan Application" isExecutable="true">
+    <bpmn:startEvent id="start" name="Application submitted">
+      <bpmn:outgoing>f_start_parallel</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f_start_parallel" sourceRef="start" targetRef="gw_split" />
+    <bpmn:parallelGateway id="gw_split" name="Split onboarding / credit">
+      <bpmn:incoming>f_start_parallel</bpmn:incoming>
+      <bpmn:outgoing>f_split_onboarding</bpmn:outgoing>
+      <bpmn:outgoing>f_split_credit</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:callActivity id="call_onboarding" name="Onboard &#38; verify KYC">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="customer-onboarding-kyc" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicationId" target="applicationId" />
+          <zeebe:input source="=applicants" target="applicants" />
+          <zeebe:output source="=kycOutcome" target="kycOutcome" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_split_onboarding</bpmn:incoming>
+      <bpmn:outgoing>f_onboarding_join</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f_split_onboarding" sourceRef="gw_split" targetRef="call_onboarding" />
+    <bpmn:callActivity id="call_credit" name="Assess credit bureau">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="credit-bureau-assessment" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicationId" target="applicationId" />
+          <zeebe:output source="=affordabilityBand" target="affordabilityBand" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_split_credit</bpmn:incoming>
+      <bpmn:outgoing>f_credit_join</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f_split_credit" sourceRef="gw_split" targetRef="call_credit" />
+    <bpmn:parallelGateway id="gw_join" name="Join onboarding / credit">
+      <bpmn:incoming>f_onboarding_join</bpmn:incoming>
+      <bpmn:incoming>f_credit_join</bpmn:incoming>
+      <bpmn:outgoing>f_join_documents</bpmn:outgoing>
+    </bpmn:parallelGateway>
+    <bpmn:sequenceFlow id="f_onboarding_join" sourceRef="call_onboarding" targetRef="gw_join" />
+    <bpmn:sequenceFlow id="f_credit_join" sourceRef="call_credit" targetRef="gw_join" />
+    <bpmn:callActivity id="call_documents" name="Collect documents">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="document-collection" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicationId" target="applicationId" />
+          <zeebe:input source="=requiredDocuments" target="requiredDocuments" />
+          <zeebe:output source="=documentsComplete" target="documentsComplete" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_join_documents</bpmn:incoming>
+      <bpmn:outgoing>f_documents_underwriting</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f_join_documents" sourceRef="gw_join" targetRef="call_documents" />
+    <bpmn:callActivity id="call_underwriting" name="Underwriting review">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="=underwritingProcessId" propagateAllParentVariables="true" propagateAllChildVariables="false" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicationId" target="applicationId" />
+          <zeebe:input source="=affordabilityBand" target="affordabilityBand" />
+          <zeebe:output source="=underwritingDecision" target="underwritingDecision" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_documents_underwriting</bpmn:incoming>
+      <bpmn:incoming>f_decision_refer</bpmn:incoming>
+      <bpmn:outgoing>f_underwriting_decision</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f_documents_underwriting" sourceRef="call_documents" targetRef="call_underwriting" />
+    <bpmn:exclusiveGateway id="gw_decision" name="Decision" default="f_decision_decline">
+      <bpmn:incoming>f_underwriting_decision</bpmn:incoming>
+      <bpmn:outgoing>f_decision_approve</bpmn:outgoing>
+      <bpmn:outgoing>f_decision_refer</bpmn:outgoing>
+      <bpmn:outgoing>f_decision_decline</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="f_underwriting_decision" sourceRef="call_underwriting" targetRef="gw_decision" />
+    <bpmn:callActivity id="call_disbursement" name="Disburse funds">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="fund-disbursement" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicationId" target="applicationId" />
+          <zeebe:input source="=approvedAmount" target="approvedAmount" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_decision_approve</bpmn:incoming>
+      <bpmn:outgoing>f_disbursement_end</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f_decision_approve" name="Approved" sourceRef="gw_decision" targetRef="call_disbursement">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=underwritingDecision = "approved"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:endEvent id="end_funded" name="Funded">
+      <bpmn:incoming>f_disbursement_end</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_disbursement_end" sourceRef="call_disbursement" targetRef="end_funded" />
+    <bpmn:sequenceFlow id="f_decision_refer" name="Referred" sourceRef="gw_decision" targetRef="call_underwriting">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=underwritingDecision = "referred"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:endEvent id="end_declined" name="Declined">
+      <bpmn:incoming>f_decision_decline</bpmn:incoming>
+      <bpmn:terminateEventDefinition id="end_declined_def" />
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_decision_decline" sourceRef="gw_decision" targetRef="end_declined" />
+    <bpmn:subProcess id="event_withdrawal" name="Client withdraws" triggeredByEvent="true">
+      <bpmn:startEvent id="start_withdrawal" name="Withdrawal requested">
+        <bpmn:outgoing>f_w1</bpmn:outgoing>
+        <bpmn:messageEventDefinition id="start_withdrawal_def" messageRef="Message_WithdrawalRequested" />
+      </bpmn:startEvent>
+      <bpmn:serviceTask id="svc_process_withdrawal" name="Process withdrawal">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="process-withdrawal" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>f_w1</bpmn:incoming>
+        <bpmn:outgoing>f_w2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:sequenceFlow id="f_w1" sourceRef="start_withdrawal" targetRef="svc_process_withdrawal" />
+      <bpmn:endEvent id="end_withdrawal" name="Withdrawn">
+        <bpmn:incoming>f_w2</bpmn:incoming>
+        <bpmn:terminateEventDefinition id="end_withdrawal_def" />
+      </bpmn:endEvent>
+      <bpmn:sequenceFlow id="f_w2" sourceRef="svc_process_withdrawal" targetRef="end_withdrawal" />
+    </bpmn:subProcess>
+    <bpmn:boundaryEvent id="boundary_cancel" name="Client cancels" attachedToRef="call_underwriting">
+      <bpmn:outgoing>f_cancel1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="boundary_cancel_def" messageRef="Message_ApplicationCancelled" />
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="svc_process_cancellation" name="Process cancellation">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="process-cancellation" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_cancel1</bpmn:incoming>
+      <bpmn:outgoing>f_cancel2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f_cancel1" sourceRef="boundary_cancel" targetRef="svc_process_cancellation" />
+    <bpmn:endEvent id="end_cancelled" name="Cancelled">
+      <bpmn:incoming>f_cancel2</bpmn:incoming>
+      <bpmn:terminateEventDefinition id="end_cancelled_def" />
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_cancel2" sourceRef="svc_process_cancellation" targetRef="end_cancelled" />
+  </bpmn:process>
+  <bpmn:message id="Message_WithdrawalRequested" name="WithdrawalRequested">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_loan-application">
+    <bpmndi:BPMNPlane id="BPMNPlane_loan-application" bpmnElement="loan-application">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_split_di" bpmnElement="gw_split">
+        <dc:Bounds x="200" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_onboarding_di" bpmnElement="call_onboarding">
+        <dc:Bounds x="325" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_join_di" bpmnElement="gw_join">
+        <dc:Bounds x="500" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_documents_di" bpmnElement="call_documents">
+        <dc:Bounds x="625" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_underwriting_di" bpmnElement="call_underwriting">
+        <dc:Bounds x="775" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_cancel_di" bpmnElement="boundary_cancel">
+        <dc:Bounds x="807" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_decision_di" bpmnElement="gw_decision" isMarkerVisible="true">
+        <dc:Bounds x="950" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_disbursement_di" bpmnElement="call_disbursement">
+        <dc:Bounds x="1075" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_funded_di" bpmnElement="end_funded">
+        <dc:Bounds x="1257" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="event_withdrawal_di" bpmnElement="event_withdrawal">
+        <dc:Bounds x="25" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_credit_di" bpmnElement="call_credit">
+        <dc:Bounds x="325" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_declined_di" bpmnElement="end_declined">
+        <dc:Bounds x="807" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_process_cancellation_di" bpmnElement="svc_process_cancellation">
+        <dc:Bounds x="925" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_cancelled_di" bpmnElement="end_cancelled">
+        <dc:Bounds x="1107" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f_start_parallel_di" bpmnElement="f_start_parallel">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="200" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_split_onboarding_di" bpmnElement="f_split_onboarding">
+        <di:waypoint x="250" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_split_credit_di" bpmnElement="f_split_credit">
+        <di:waypoint x="225" y="95" />
+        <di:waypoint x="225" y="210" />
+        <di:waypoint x="325" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_onboarding_join_di" bpmnElement="f_onboarding_join">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="500" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_join_documents_di" bpmnElement="f_join_documents">
+        <di:waypoint x="550" y="70" />
+        <di:waypoint x="625" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_documents_underwriting_di" bpmnElement="f_documents_underwriting">
+        <di:waypoint x="725" y="70" />
+        <di:waypoint x="775" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_underwriting_decision_di" bpmnElement="f_underwriting_decision">
+        <di:waypoint x="875" y="70" />
+        <di:waypoint x="950" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_cancel1_di" bpmnElement="f_cancel1">
+        <di:waypoint x="825" y="128" />
+        <di:waypoint x="825" y="140" />
+        <di:waypoint x="900" y="140" />
+        <di:waypoint x="900" y="110" />
+        <di:waypoint x="900" y="140" />
+        <di:waypoint x="900" y="140" />
+        <di:waypoint x="900" y="210" />
+        <di:waypoint x="925" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_decision_approve_di" bpmnElement="f_decision_approve">
+        <di:waypoint x="1000" y="70" />
+        <di:waypoint x="1075" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_decision_refer_di" bpmnElement="f_decision_refer">
+        <di:waypoint x="975" y="95" />
+        <di:waypoint x="975" y="140" />
+        <di:waypoint x="825" y="140" />
+        <di:waypoint x="825" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_decision_decline_di" bpmnElement="f_decision_decline">
+        <di:waypoint x="975" y="45" />
+        <di:waypoint x="975" y="0" />
+        <di:waypoint x="825" y="0" />
+        <di:waypoint x="825" y="192" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_disbursement_end_di" bpmnElement="f_disbursement_end">
+        <di:waypoint x="1175" y="70" />
+        <di:waypoint x="1257" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_credit_join_di" bpmnElement="f_credit_join">
+        <di:waypoint x="425" y="210" />
+        <di:waypoint x="525" y="210" />
+        <di:waypoint x="525" y="95" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_cancel2_di" bpmnElement="f_cancel2">
+        <di:waypoint x="1025" y="210" />
+        <di:waypoint x="1107" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="start_withdrawal_di" bpmnElement="start_withdrawal">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_process_withdrawal_di" bpmnElement="svc_process_withdrawal">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_withdrawal_di" bpmnElement="end_withdrawal">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f_w1_di" bpmnElement="f_w1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_w2_di" bpmnElement="f_w2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

@@ -1,0 +1,134 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P11" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:process id="base-rate-change-broadcast" name="Base Rate Change Broadcast" isExecutable="true">
+    <bpmn:startEvent id="start" name="Rate change confirmed by treasury">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="gw_fan_out" />
+    <bpmn:inclusiveGateway id="gw_fan_out" name="Affected product families">
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f_mortgages</bpmn:outgoing>
+      <bpmn:outgoing>f_personal_loans</bpmn:outgoing>
+      <bpmn:outgoing>f_savings</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:sequenceFlow id="f_mortgages" name="Mortgages" sourceRef="gw_fan_out" targetRef="svc_flag_mortgages">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=affectsMortgages</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_personal_loans" name="Personal loans" sourceRef="gw_fan_out" targetRef="svc_flag_personal_loans">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=affectsPersonalLoans</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_savings" name="Savings" sourceRef="gw_fan_out" targetRef="svc_flag_savings">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=affectsSavings</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:serviceTask id="svc_flag_mortgages" name="Flag mortgage book">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="flag-product-book" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_mortgages</bpmn:incoming>
+      <bpmn:outgoing>f_j1</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="svc_flag_personal_loans" name="Flag personal-loan book">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="flag-product-book" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_personal_loans</bpmn:incoming>
+      <bpmn:outgoing>f_j2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:serviceTask id="svc_flag_savings" name="Flag savings book">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="flag-product-book" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_savings</bpmn:incoming>
+      <bpmn:outgoing>f_j3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:inclusiveGateway id="gw_join" name="Join">
+      <bpmn:incoming>f_j1</bpmn:incoming>
+      <bpmn:incoming>f_j2</bpmn:incoming>
+      <bpmn:incoming>f_j3</bpmn:incoming>
+      <bpmn:outgoing>f_j4</bpmn:outgoing>
+    </bpmn:inclusiveGateway>
+    <bpmn:sequenceFlow id="f_j1" sourceRef="svc_flag_mortgages" targetRef="gw_join" />
+    <bpmn:sequenceFlow id="f_j2" sourceRef="svc_flag_personal_loans" targetRef="gw_join" />
+    <bpmn:sequenceFlow id="f_j3" sourceRef="svc_flag_savings" targetRef="gw_join" />
+    <bpmn:sequenceFlow id="f_j4" sourceRef="gw_join" targetRef="throw_broadcast" />
+    <bpmn:intermediateThrowEvent id="throw_broadcast" name="Broadcast rate change">
+      <bpmn:incoming>f_j4</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+      <bpmn:signalEventDefinition id="throw_broadcast_def" signalRef="Signal_BaseRateChanged" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:sequenceFlow id="f2" sourceRef="throw_broadcast" targetRef="end" />
+    <bpmn:endEvent id="end" name="Broadcast complete">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:terminateEventDefinition id="end_def" />
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:signal id="Signal_BaseRateChanged" name="BaseRateChanged" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_base-rate-change-broadcast">
+    <bpmndi:BPMNPlane id="BPMNPlane_base-rate-change-broadcast" bpmnElement="base-rate-change-broadcast">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_fan_out_di" bpmnElement="gw_fan_out">
+        <dc:Bounds x="200" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_flag_mortgages_di" bpmnElement="svc_flag_mortgages">
+        <dc:Bounds x="325" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_join_di" bpmnElement="gw_join">
+        <dc:Bounds x="500" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="throw_broadcast_di" bpmnElement="throw_broadcast">
+        <dc:Bounds x="657" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="807" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_flag_personal_loans_di" bpmnElement="svc_flag_personal_loans">
+        <dc:Bounds x="325" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_flag_savings_di" bpmnElement="svc_flag_savings">
+        <dc:Bounds x="325" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="200" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_mortgages_di" bpmnElement="f_mortgages">
+        <di:waypoint x="250" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_personal_loans_di" bpmnElement="f_personal_loans">
+        <di:waypoint x="225" y="95" />
+        <di:waypoint x="225" y="210" />
+        <di:waypoint x="325" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_savings_di" bpmnElement="f_savings">
+        <di:waypoint x="225" y="95" />
+        <di:waypoint x="225" y="350" />
+        <di:waypoint x="325" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_j1_di" bpmnElement="f_j1">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="500" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_j4_di" bpmnElement="f_j4">
+        <di:waypoint x="550" y="70" />
+        <di:waypoint x="657" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="693" y="70" />
+        <di:waypoint x="807" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_j2_di" bpmnElement="f_j2">
+        <di:waypoint x="425" y="210" />
+        <di:waypoint x="525" y="210" />
+        <di:waypoint x="525" y="95" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_j3_di" bpmnElement="f_j3">
+        <di:waypoint x="425" y="350" />
+        <di:waypoint x="525" y="350" />
+        <di:waypoint x="525" y="95" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

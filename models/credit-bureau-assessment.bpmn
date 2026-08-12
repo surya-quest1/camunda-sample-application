@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P05" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:escalation id="Escalation_SeniorReview" name="Senior Analyst Review" escalationCode="SENIOR_ANALYST_REVIEW" />
+  <bpmn:process id="credit-bureau-assessment" name="Credit Bureau Assessment" isExecutable="true">
+    <bpmn:startEvent id="start" name="Assessment requested">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="svc_pull_report" />
+    <bpmn:serviceTask id="svc_pull_report" name="Pull credit bureau report" zeebe:modelerTemplate="io.camunda.connectors.HttpJson.v2">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="io.camunda:http-json:1" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=&#34;POST&#34;" target="method" />
+          <zeebe:input source="=&#34;https://credit-bureau.internal.example.com/v1/reports&#34;" target="url" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="svc_pull_report" targetRef="svc_core_banking" />
+    <bpmn:serviceTask id="svc_core_banking" name="Post to Core Banking API" zeebe:modelerTemplate="com.northwindbank.connectors.CoreBankingApi.v1">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="core-banking-api-call" />
+        <zeebe:taskHeaders>
+          <zeebe:header key="authToken" value="{{secrets.CORE_BANKING_TOKEN}}" />
+        </zeebe:taskHeaders>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f3" sourceRef="svc_core_banking" targetRef="sub_credit_evaluation" />
+    <bpmn:subProcess id="sub_credit_evaluation" name="Credit risk evaluation">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+      <bpmn:startEvent id="sub_start" name="Evaluation started">
+        <bpmn:outgoing>sf1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="sf1" sourceRef="sub_start" targetRef="br_credit_risk" />
+      <bpmn:businessRuleTask id="br_credit_risk" name="Evaluate credit risk">
+        <bpmn:extensionElements>
+          <zeebe:calledDecision decisionId="affordability-band" resultVariable="affordabilityBand" bindingType="latest" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>sf1</bpmn:incoming>
+        <bpmn:outgoing>sf2</bpmn:outgoing>
+      </bpmn:businessRuleTask>
+      <bpmn:sequenceFlow id="sf2" sourceRef="br_credit_risk" targetRef="sub_end" />
+      <bpmn:endEvent id="sub_end" name="Evaluation complete">
+        <bpmn:incoming>sf2</bpmn:incoming>
+      </bpmn:endEvent>
+    </bpmn:subProcess>
+    <bpmn:sequenceFlow id="f4" sourceRef="sub_credit_evaluation" targetRef="gw_high_value" />
+    <bpmn:exclusiveGateway id="gw_high_value" name="High value?" default="f_standard">
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f_high_value</bpmn:outgoing>
+      <bpmn:outgoing>f_standard</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="f_high_value" name="High value" sourceRef="gw_high_value" targetRef="esc_senior_review">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=requestedAmount &gt; 250000</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_standard" name="Standard" sourceRef="gw_high_value" targetRef="catch_rate_change" />
+    <bpmn:boundaryEvent id="boundary_senior_flag" name="Senior review flag raised" cancelActivity="false" attachedToRef="sub_credit_evaluation">
+      <bpmn:outgoing>f_ne_esc1</bpmn:outgoing>
+      <bpmn:escalationEventDefinition id="boundary_senior_flag_def" escalationRef="Escalation_SeniorReview" />
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="svc_notify_senior_analyst" name="Notify senior analyst">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="notify-senior-analyst" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_ne_esc1</bpmn:incoming>
+      <bpmn:outgoing>f_ne_esc2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f_ne_esc1" sourceRef="boundary_senior_flag" targetRef="svc_notify_senior_analyst" />
+    <bpmn:endEvent id="end_senior_notified" name="Senior analyst notified">
+      <bpmn:incoming>f_ne_esc2</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_ne_esc2" sourceRef="svc_notify_senior_analyst" targetRef="end_senior_notified" />
+    <bpmn:intermediateThrowEvent id="esc_senior_review" name="Escalate to senior analyst">
+      <bpmn:incoming>f_high_value</bpmn:incoming>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+      <bpmn:escalationEventDefinition id="esc_senior_review_def" escalationRef="Escalation_SeniorReview" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:sequenceFlow id="f5" sourceRef="esc_senior_review" targetRef="catch_rate_change" />
+    <bpmn:intermediateCatchEvent id="catch_rate_change" name="Base rate changed">
+      <bpmn:incoming>f_standard</bpmn:incoming>
+      <bpmn:incoming>f5</bpmn:incoming>
+      <bpmn:outgoing>f6</bpmn:outgoing>
+      <bpmn:signalEventDefinition id="catch_rate_change_def" signalRef="Signal_BaseRateChanged" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f6" sourceRef="catch_rate_change" targetRef="end" />
+    <bpmn:endEvent id="end" name="Assessment complete">
+      <bpmn:incoming>f6</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:signal id="Signal_BaseRateChanged" name="BaseRateChanged" />
+  <bpmndi:BPMNDiagram id="BPMNDiagram_credit-bureau-assessment">
+    <bpmndi:BPMNPlane id="BPMNPlane_credit-bureau-assessment" bpmnElement="credit-bureau-assessment">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_pull_report_di" bpmnElement="svc_pull_report">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_core_banking_di" bpmnElement="svc_core_banking">
+        <dc:Bounds x="325" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_credit_evaluation_di" bpmnElement="sub_credit_evaluation">
+        <dc:Bounds x="475" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_senior_flag_di" bpmnElement="boundary_senior_flag">
+        <dc:Bounds x="507" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_high_value_di" bpmnElement="gw_high_value" isMarkerVisible="true">
+        <dc:Bounds x="650" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="esc_senior_review_di" bpmnElement="esc_senior_review">
+        <dc:Bounds x="807" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="catch_rate_change_di" bpmnElement="catch_rate_change">
+        <dc:Bounds x="957" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="1107" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_notify_senior_analyst_di" bpmnElement="svc_notify_senior_analyst">
+        <dc:Bounds x="625" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_senior_notified_di" bpmnElement="end_senior_notified">
+        <dc:Bounds x="807" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="475" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="575" y="70" />
+        <di:waypoint x="650" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_ne_esc1_di" bpmnElement="f_ne_esc1">
+        <di:waypoint x="525" y="128" />
+        <di:waypoint x="525" y="350" />
+        <di:waypoint x="625" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_high_value_di" bpmnElement="f_high_value">
+        <di:waypoint x="700" y="70" />
+        <di:waypoint x="807" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_standard_di" bpmnElement="f_standard">
+        <di:waypoint x="675" y="95" />
+        <di:waypoint x="675" y="140" />
+        <di:waypoint x="975" y="140" />
+        <di:waypoint x="975" y="88" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="843" y="70" />
+        <di:waypoint x="957" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="993" y="70" />
+        <di:waypoint x="1107" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_ne_esc2_di" bpmnElement="f_ne_esc2">
+        <di:waypoint x="725" y="350" />
+        <di:waypoint x="807" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="sub_start_di" bpmnElement="sub_start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="br_credit_risk_di" bpmnElement="br_credit_risk">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_end_di" bpmnElement="sub_end">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

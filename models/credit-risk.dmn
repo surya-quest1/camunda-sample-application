@@ -1,0 +1,128 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+             xmlns:camunda="http://camunda.org/schema/1.0/dmn"
+             xmlns:dmndi="https://www.omg.org/spec/DMN/20191111/DMNDI/"
+             xmlns:dc="http://www.omg.org/spec/DMN/20180521/DC/"
+             id="Definitions_CreditRisk"
+             name="Credit Risk"
+             namespace="http://northwind-private-bank.example.com/dmn/credit-risk"
+             exporter="northwind-reference-app" exporterVersion="1.0">
+
+  <!-- Decision Requirements Graph: override-precedence <- risk-flags <- affordability-band -->
+
+  <decision id="affordability-band" name="Affordability Band">
+    <decisionTable id="DecisionTable_AffordabilityBand" hitPolicy="UNIQUE">
+      <input id="Input_Income" label="Monthly Income">
+        <inputExpression id="InputExpression_Income" typeRef="number">
+          <text>monthlyIncome</text>
+        </inputExpression>
+      </input>
+      <input id="Input_Debt" label="Existing Debt Ratio">
+        <inputExpression id="InputExpression_Debt" typeRef="number">
+          <text>existingDebtRatio</text>
+        </inputExpression>
+      </input>
+      <output id="Output_Band" label="Affordability Band" name="affordabilityBand" typeRef="string">
+        <outputValues>
+          <text>"LOW","MEDIUM","HIGH"</text>
+        </outputValues>
+      </output>
+      <rule id="Rule_Aff1">
+        <inputEntry id="InputEntry_Aff1a"><text>&gt;= 5000</text></inputEntry>
+        <inputEntry id="InputEntry_Aff1b"><text>&lt; 0.3</text></inputEntry>
+        <outputEntry id="OutputEntry_Aff1"><text>"HIGH"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Aff2">
+        <inputEntry id="InputEntry_Aff2a"><text>[2000..5000)</text></inputEntry>
+        <inputEntry id="InputEntry_Aff2b"><text>&lt; 0.5</text></inputEntry>
+        <outputEntry id="OutputEntry_Aff2"><text>"MEDIUM"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Aff3">
+        <inputEntry id="InputEntry_Aff3a"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Aff3b"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_Aff3"><text>"LOW"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="risk-flags" name="Risk Flags">
+    <informationRequirement id="InformationRequirement_RiskFlags1">
+      <requiredDecision href="#affordability-band" />
+    </informationRequirement>
+    <decisionTable id="DecisionTable_RiskFlags" hitPolicy="COLLECT">
+      <input id="Input_Band" label="Affordability Band">
+        <inputExpression id="InputExpression_Band" typeRef="string">
+          <text>affordabilityBand</text>
+        </inputExpression>
+      </input>
+      <input id="Input_CCJ" label="County Court Judgment Count">
+        <inputExpression id="InputExpression_CCJ" typeRef="number">
+          <text>ccjCount</text>
+        </inputExpression>
+      </input>
+      <input id="Input_Sanctions" label="Sanctions Hit">
+        <inputExpression id="InputExpression_Sanctions" typeRef="boolean">
+          <text>sanctionsHit</text>
+        </inputExpression>
+      </input>
+      <output id="Output_Flag" label="Risk Flag" name="riskFlag" typeRef="string" />
+      <rule id="Rule_Risk1">
+        <inputEntry id="InputEntry_Risk1a"><text>"HIGH"</text></inputEntry>
+        <inputEntry id="InputEntry_Risk1b"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Risk1c"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_Risk1"><text>"AFFORDABILITY_HIGH_RISK"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Risk2">
+        <inputEntry id="InputEntry_Risk2a"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Risk2b"><text>&gt;= 1</text></inputEntry>
+        <inputEntry id="InputEntry_Risk2c"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_Risk2"><text>"CCJ_ON_FILE"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Risk3">
+        <inputEntry id="InputEntry_Risk3a"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Risk3b"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Risk3c"><text>true</text></inputEntry>
+        <outputEntry id="OutputEntry_Risk3"><text>"SANCTIONS_HIT"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+  <decision id="override-precedence" name="Override Precedence">
+    <informationRequirement id="InformationRequirement_Override1">
+      <requiredDecision href="#risk-flags" />
+    </informationRequirement>
+    <decisionTable id="DecisionTable_OverridePrecedence" hitPolicy="PRIORITY">
+      <input id="Input_ManualOverride" label="Manual Override Requested">
+        <inputExpression id="InputExpression_ManualOverride" typeRef="boolean">
+          <text>manualOverrideRequested</text>
+        </inputExpression>
+      </input>
+      <input id="Input_HasSanctionsFlag" label="Has Sanctions Flag">
+        <inputExpression id="InputExpression_HasSanctionsFlag" typeRef="boolean">
+          <text>hasSanctionsFlag</text>
+        </inputExpression>
+      </input>
+      <output id="Output_FinalDecision" label="Final Decision" name="finalDecision" typeRef="string">
+        <outputValues>
+          <text>"DECLINE","MANUAL_REVIEW","PROCEED"</text>
+        </outputValues>
+      </output>
+      <rule id="Rule_Override1">
+        <inputEntry id="InputEntry_Override1a"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Override1b"><text>true</text></inputEntry>
+        <outputEntry id="OutputEntry_Override1"><text>"DECLINE"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Override2">
+        <inputEntry id="InputEntry_Override2a"><text>true</text></inputEntry>
+        <inputEntry id="InputEntry_Override2b"><text>false</text></inputEntry>
+        <outputEntry id="OutputEntry_Override2"><text>"MANUAL_REVIEW"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Override3">
+        <inputEntry id="InputEntry_Override3a"><text>false</text></inputEntry>
+        <inputEntry id="InputEntry_Override3b"><text>false</text></inputEntry>
+        <outputEntry id="OutputEntry_Override3"><text>"PROCEED"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+</definitions>

@@ -1,0 +1,15 @@
+.env
+*.log
+target/
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+cluster/.identity/
+cluster/.web-modeler/
+seed/state/
+expected/actual-*.json
+.DS_Store
+.camunda-assessment-checkpoints/
+.camunda-assessment-raw/
+cluster/connector-secrets.txt

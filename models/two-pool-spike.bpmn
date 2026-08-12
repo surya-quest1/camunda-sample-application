@@ -1,0 +1,75 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_TwoPoolSpike" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:collaboration id="Collaboration_TwoPoolSpike">
+    <bpmn:participant id="Participant_0" name="Northwind Processing" processRef="two-pool-spike-executable" />
+    <bpmn:participant id="Participant_1" name="Business Analyst Sketch" processRef="two-pool-spike-analyst-pool" />
+  </bpmn:collaboration>
+  <bpmn:process id="two-pool-spike-executable" name="Two-Pool Spike (Executable)" isExecutable="true">
+    <bpmn:startEvent id="start" name="Start">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="svc" />
+    <bpmn:serviceTask id="svc" name="Do work">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="spike-do-work" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="svc" targetRef="end" />
+    <bpmn:endEvent id="end" name="End">
+      <bpmn:incoming>f2</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:process id="two-pool-spike-analyst-pool" name="Analyst Pool (non-executable)" isExecutable="false">
+    <bpmn:startEvent id="na_start" name="Start">
+      <bpmn:outgoing>naf1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="naf1" sourceRef="na_start" targetRef="na_gw" />
+    <bpmn:complexGateway id="na_gw" name="Complex routing">
+      <bpmn:incoming>naf1</bpmn:incoming>
+      <bpmn:outgoing>naf2</bpmn:outgoing>
+    </bpmn:complexGateway>
+    <bpmn:serviceTask id="na_svc" name="Branch">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="branch-na" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>naf2</bpmn:incoming>
+      <bpmn:outgoing>naf3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="naf2" sourceRef="na_gw" targetRef="na_svc" />
+    <bpmn:sequenceFlow id="naf3" sourceRef="na_svc" targetRef="na_catch" />
+    <bpmn:intermediateCatchEvent id="na_catch" name="Balance threshold reached">
+      <bpmn:incoming>naf3</bpmn:incoming>
+      <bpmn:outgoing>naf4</bpmn:outgoing>
+      <bpmn:conditionalEventDefinition id="na_catch_def">
+        <bpmn:condition xsi:type="bpmn:tFormalExpression">=accountBalance &gt; 10000</bpmn:condition>
+      </bpmn:conditionalEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="naf4" sourceRef="na_catch" targetRef="na_end" />
+    <bpmn:endEvent id="na_end" name="End">
+      <bpmn:incoming>naf4</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_two-pool-spike-executable">
+    <bpmndi:BPMNPlane id="BPMNPlane_two-pool-spike-executable" bpmnElement="two-pool-spike-executable">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_di" bpmnElement="svc">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

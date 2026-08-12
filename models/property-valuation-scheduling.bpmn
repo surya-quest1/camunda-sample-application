@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P10" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:process id="property-valuation-scheduling" name="Property Valuation Scheduling" isExecutable="true">
+    <bpmn:startEvent id="start" name="Nightly scheduling run">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="start_def">
+        <bpmn:timeCycle>R/PT24H</bpmn:timeCycle>
+      </bpmn:timerEventDefinition>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="ah_schedule_visit" />
+    <bpmn:adHocSubProcess id="ah_schedule_visit" name="Arrange surveyor visit">
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+      <bpmn:serviceTask id="ah_svc_book_surveyor" name="Book surveyor slot">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="book-surveyor-slot" />
+        </bpmn:extensionElements>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="ah_svc_notify_client" name="Notify client of appointment">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="notify-valuation-appointment" />
+        </bpmn:extensionElements>
+      </bpmn:serviceTask>
+      <bpmn:serviceTask id="ah_svc_prep_access" name="Arrange property access">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="arrange-property-access" />
+        </bpmn:extensionElements>
+      </bpmn:serviceTask>
+    </bpmn:adHocSubProcess>
+    <bpmn:sequenceFlow id="f2" sourceRef="ah_schedule_visit" targetRef="call_documents" />
+    <bpmn:callActivity id="call_documents" name="Collect valuation report">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="document-collection" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicationId" target="applicationId" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f3" sourceRef="call_documents" targetRef="end" />
+    <bpmn:endEvent id="end" name="Valuation complete">
+      <bpmn:incoming>f3</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_property-valuation-scheduling">
+    <bpmndi:BPMNPlane id="BPMNPlane_property-valuation-scheduling" bpmnElement="property-valuation-scheduling">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ah_schedule_visit_di" bpmnElement="ah_schedule_visit">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_documents_di" bpmnElement="call_documents">
+        <dc:Bounds x="325" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="507" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="507" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="ah_svc_book_surveyor_di" bpmnElement="ah_svc_book_surveyor">
+        <dc:Bounds x="25" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ah_svc_notify_client_di" bpmnElement="ah_svc_notify_client">
+        <dc:Bounds x="25" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ah_svc_prep_access_di" bpmnElement="ah_svc_prep_access">
+        <dc:Bounds x="25" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

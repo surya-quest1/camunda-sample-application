@@ -1,0 +1,28 @@
+{
+  "components": [
+    {
+      "label": "Bureau status",
+      "type": "textfield",
+      "id": "Field_BureauStatus",
+      "key": "bureauStatus",
+      "readonly": true
+    },
+    {
+      "label": "Manual verification outcome",
+      "type": "select",
+      "id": "Field_ManualOutcome",
+      "key": "manualVerificationOutcome",
+      "values": [
+        { "label": "Verified", "value": "verified" },
+        { "label": "Rejected", "value": "rejected" }
+      ],
+      "validate": { "required": true }
+    }
+  ],
+  "schemaVersion": 4,
+  "exporter": { "name": "northwind-reference-app", "version": "1.0" },
+  "type": "default",
+  "id": "identity-manual-review-form",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8"
+}

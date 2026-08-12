@@ -1,0 +1,185 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P06" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:message id="Message_DocumentReceived" name="DocumentReceived">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmn:process id="document-collection" name="Document Collection" isExecutable="true">
+    <bpmn:startEvent id="start" name="Collection started">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="mi_chase_document" />
+    <bpmn:serviceTask id="mi_chase_document" name="Chase document">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="chase-document" retries="2" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+      <bpmn:multiInstanceLoopCharacteristics isSequential="true">
+        <bpmn:extensionElements>
+          <zeebe:loopCharacteristics inputCollection="=requiredDocuments" inputElement="document" outputCollection="=documentStatuses" outputElement="=documentStatus" />
+        </bpmn:extensionElements>
+      </bpmn:multiInstanceLoopCharacteristics>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="mi_chase_document" targetRef="catch_document_received" />
+    <bpmn:intermediateCatchEvent id="catch_document_received" name="Document received">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f2b</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="catch_document_received_def" messageRef="Message_DocumentReceived" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f2b" sourceRef="catch_document_received" targetRef="ut_manual_upload" />
+    <bpmn:boundaryEvent id="boundary_reminder_1" name="Reminder day 3" cancelActivity="false" attachedToRef="mi_chase_document">
+      <bpmn:outgoing>f_r1a</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="boundary_reminder_1_def">
+        <bpmn:timeDuration>P3D</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="svc_send_reminder_1" name="Send reminder">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="send-document-reminder" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_r1a</bpmn:incoming>
+      <bpmn:outgoing>f_r1b</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f_r1a" sourceRef="boundary_reminder_1" targetRef="svc_send_reminder_1" />
+    <bpmn:endEvent id="end_reminder_1" name="Reminder sent">
+      <bpmn:incoming>f_r1b</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_r1b" sourceRef="svc_send_reminder_1" targetRef="end_reminder_1" />
+    <bpmn:boundaryEvent id="boundary_reminder_2" name="Reminder day 7" cancelActivity="false" attachedToRef="mi_chase_document">
+      <bpmn:outgoing>f_r2a</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="boundary_reminder_2_def">
+        <bpmn:timeDuration>P7D</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:boundaryEvent>
+    <bpmn:serviceTask id="svc_send_reminder_2" name="Send final reminder">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="send-document-reminder" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_r2a</bpmn:incoming>
+      <bpmn:outgoing>f_r2b</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f_r2a" sourceRef="boundary_reminder_2" targetRef="svc_send_reminder_2" />
+    <bpmn:endEvent id="end_reminder_2" name="Final reminder sent">
+      <bpmn:incoming>f_r2b</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sequenceFlow id="f_r2b" sourceRef="svc_send_reminder_2" targetRef="end_reminder_2" />
+    <bpmn:userTask id="ut_manual_upload" name="Manual document upload">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="ops-back-office" />
+        <zeebe:formDefinition formId="document-upload-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2b</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f3" sourceRef="ut_manual_upload" targetRef="receive_confirmation" />
+    <bpmn:receiveTask id="receive_confirmation" name="Await final confirmation" messageRef="Message_CollectionConfirmed">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+    </bpmn:receiveTask>
+    <bpmn:sequenceFlow id="f4" sourceRef="receive_confirmation" targetRef="timer_cooling_off" />
+    <bpmn:intermediateCatchEvent id="timer_cooling_off" name="Cooling-off period">
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+      <bpmn:timerEventDefinition id="timer_cooling_off_def">
+        <bpmn:timeDuration>P35D</bpmn:timeDuration>
+      </bpmn:timerEventDefinition>
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f5" sourceRef="timer_cooling_off" targetRef="end" />
+    <bpmn:endEvent id="end" name="Collection complete">
+      <bpmn:incoming>f5</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:message id="Message_CollectionConfirmed" name="CollectionConfirmed">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_document-collection">
+    <bpmndi:BPMNPlane id="BPMNPlane_document-collection" bpmnElement="document-collection">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="mi_chase_document_di" bpmnElement="mi_chase_document">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_reminder_1_di" bpmnElement="boundary_reminder_1">
+        <dc:Bounds x="190.33333333333334" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_reminder_2_di" bpmnElement="boundary_reminder_2">
+        <dc:Bounds x="223.66666666666669" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="catch_document_received_di" bpmnElement="catch_document_received">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ut_manual_upload_di" bpmnElement="ut_manual_upload">
+        <dc:Bounds x="475" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="receive_confirmation_di" bpmnElement="receive_confirmation">
+        <dc:Bounds x="625" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="timer_cooling_off_di" bpmnElement="timer_cooling_off">
+        <dc:Bounds x="807" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="957" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_send_reminder_2_di" bpmnElement="svc_send_reminder_2">
+        <dc:Bounds x="325" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_reminder_2_di" bpmnElement="end_reminder_2">
+        <dc:Bounds x="507" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_send_reminder_1_di" bpmnElement="svc_send_reminder_1">
+        <dc:Bounds x="325" y="310" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_reminder_1_di" bpmnElement="end_reminder_1">
+        <dc:Bounds x="507" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_r1a_di" bpmnElement="f_r1a">
+        <di:waypoint x="208.33333333333334" y="128" />
+        <di:waypoint x="208.33333333333334" y="350" />
+        <di:waypoint x="325" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_r2a_di" bpmnElement="f_r2a">
+        <di:waypoint x="241.66666666666669" y="128" />
+        <di:waypoint x="241.66666666666669" y="210" />
+        <di:waypoint x="325" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2b_di" bpmnElement="f2b">
+        <di:waypoint x="393" y="70" />
+        <di:waypoint x="475" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="575" y="70" />
+        <di:waypoint x="625" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="725" y="70" />
+        <di:waypoint x="807" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="843" y="70" />
+        <di:waypoint x="957" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_r2b_di" bpmnElement="f_r2b">
+        <di:waypoint x="425" y="210" />
+        <di:waypoint x="507" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_r1b_di" bpmnElement="f_r1b">
+        <di:waypoint x="425" y="350" />
+        <di:waypoint x="507" y="350" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

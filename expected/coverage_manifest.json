@@ -1,0 +1,106 @@
+{
+  "_comment": "Expected coverage of the Northwind Private Bank estate, checked by scripts/verify.py against the real assessment-tool's classify output and (once the seeding driver is complete) the full assessment-report.json. See docs 00/01 for the design this encodes.",
+  "schemaVersion": "1.0",
+  "processDefinitions": {
+    "expectedCount": 16,
+    "expectedIds": [
+      "loan-application", "customer-onboarding-kyc", "identity-verification",
+      "sanctions-screening", "credit-bureau-assessment", "document-collection",
+      "underwriting-review", "fund-disbursement", "payment-instruction",
+      "property-valuation-scheduling", "base-rate-change-broadcast",
+      "rate-change-notification", "regulatory-reporting-batch",
+      "complaint-handling", "account-closure", "fx-settlement"
+    ],
+    "versionSkew": {
+      "processId": "fx-settlement",
+      "expectedVersions": [1, 2, 3],
+      "note": "content-distinct deploys, not re-deploys of identical bytes -- gap #4, in-flight instance migration"
+    },
+    "dormant": {
+      "processId": "account-closure",
+      "note": "deployed, deliberately never started"
+    }
+  },
+  "constructClassificationKeys": {
+    "note": "the 48 keys in assessment-tool/pkg/mapper/classification_table.json. Verified 2026-08-12 by running the real Classify() against every generated BPMN file via scripts/bpmn-validate -classify.",
+    "expectedCoveredCount": 46,
+    "permanentlyUncoverable": [
+      { "key": "gateway.complex", "reason": "not executable in Camunda 8 -- fixtures/complex-gateway.bpmn is analyser-unit-fixture only" },
+      { "key": "conditionalEvent", "reason": "not implemented in Zeebe -- fixtures/conditional-event.bpmn is analyser-unit-fixture only" }
+    ],
+    "verifiedCoveredKeys": [
+      "adHocSubprocess", "businessRuleTask.inBroker", "businessRuleTask.jobWorker",
+      "callActivity", "compensation.boundary", "compensation.handler",
+      "compensation.throwOrEnd", "endEvent.none", "endEvent.terminate",
+      "error.boundary", "error.end", "error.eventSubprocessStart",
+      "escalation.interrupting", "escalation.nonInterrupting",
+      "gateway.eventBased", "gateway.exclusive", "gateway.inclusive",
+      "gateway.parallel", "linkEvent", "manualTask",
+      "message.boundaryInterrupting", "message.boundaryNonInterrupting",
+      "message.intermediateCatch.computed", "message.intermediateCatch.simple",
+      "message.start", "message.throw", "multiInstance.parallel",
+      "multiInstance.sequential", "receiveTask", "scriptTask.inBroker",
+      "scriptTask.jobWorker", "sendTask", "serviceTask", "signal.catch",
+      "signal.start", "signal.throw", "startEvent.none",
+      "subprocess.embedded", "subprocess.eventInterrupting",
+      "subprocess.eventNonInterrupting", "timer.boundaryInterrupting",
+      "timer.boundaryNonInterrupting", "timer.intermediateCatch",
+      "timer.start", "undefinedTask", "userTask"
+    ]
+  },
+  "jobTypes": {
+    "expectedJavaCount": 22,
+    "expectedPythonCount": 10,
+    "reconciliationDefects": [
+      {
+        "type": "declaredOnly",
+        "jobType": "manual-ledger-adjustment",
+        "declaredIn": "fund-disbursement.bpmn",
+        "note": "planted: no worker in either service implements this job type"
+      },
+      {
+        "type": "observedOnly",
+        "jobType": "legacy-fx-reconcile",
+        "implementedIn": "workers-java LegacyWorkers.java",
+        "note": "planted: registered worker for a job type no BPMN process references"
+      }
+    ],
+    "secretsFindings": {
+      "expectedCount": 2,
+      "locations": [
+        "workers-java CoreBankingClient.java -- CORE_BANKING_TOKEN hardcoded fallback",
+        "workers-python notification_client.py -- NOTIFICATION_API_KEY hardcoded fallback"
+      ]
+    }
+  },
+  "connectors": {
+    "expectedDistinctTypes": 2,
+    "types": ["io.camunda:http-json:1", "com.northwindbank.connectors.CoreBankingApi.v1"],
+    "expectedSecretRefCount": 1,
+    "note": "both live in credit-bureau-assessment.bpmn; SMTP/webhook-inbound connectors from the design doc were not built (documented simplification, see 00_design_proposal.md)"
+  },
+  "timerRiskCounters": {
+    "nonInterruptingBoundaryCount": { "expectedNonZero": true, "source": "document-collection.bpmn reminder timers" },
+    "unboundedCycleCount": { "expectedNonZero": true, "source": "sanctions-screening.bpmn R/PT6H rescreen start event" },
+    "cronNonZeroSecondsCount": { "expectedNonZero": true, "source": "regulatory-reporting-batch.bpmn '0 17 3 * * ?'" },
+    "durationOver30DaysCount": { "expectedNonZero": true, "source": "document-collection.bpmn P30D cooling-off timer" }
+  },
+  "multiTenancy": {
+    "expectedTenants": ["<default>", "retail", "private-bank"],
+    "tenantScopedSubset": [
+      "loan-application", "customer-onboarding-kyc", "identity-verification",
+      "sanctions-screening", "credit-bureau-assessment", "document-collection"
+    ]
+  },
+  "notYetVerifiable": {
+    "note": "requires the completed seeding driver -- not checked by verify.py yet",
+    "items": [
+      "MVP recommendation candidates (P03, P05, P09 expected to pass; P01, P13, P15 expected to fail for distinct reasons -- see 00_design_proposal.md §5.1)",
+      "runtime profile / duration percentiles / start rates",
+      "history volume projection and historyRiskBand",
+      "incident causes (topIncidentCauses)",
+      "longestRunningInstanceDays",
+      "all 6 estate grade dimensions non-unknown (operationalCoupling needs questionnaire input)"
+    ]
+  }
+}

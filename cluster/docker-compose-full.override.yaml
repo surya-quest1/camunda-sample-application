@@ -1,0 +1,46 @@
+# Redirects the named volumes in docker-compose-full.yaml from Docker's
+# default data-root (usually on the host's root filesystem) to bind-mount
+# directories on the larger /mnt/quest1 disk. Needed on hosts where the root
+# partition is too small to hold Elasticsearch/Postgres data (see "No space
+# left on device" failures on initdb / ES temp dir creation).
+#
+# Before first use, create the target directories and set ownership to match
+# each container's runtime user, or Elasticsearch/Postgres will fail to start:
+#
+#   mkdir -p /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/{orchestration,elastic,postgres,postgres-web}
+#   chown -R 1000:1000 /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/elastic
+#   chown -R 999:999   /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/postgres
+#   chown -R 999:999   /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/postgres-web
+#   # orchestration runs as root in the image; no chown needed
+#
+# Usage (this filename is not auto-loaded — pass it explicitly):
+#   docker compose -f docker-compose-full.yaml -f docker-compose-full.override.yaml up -d
+
+volumes:
+  orchestration:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/orchestration
+
+  elastic:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/elastic
+
+  postgres:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/postgres
+
+  postgres-web:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: /mnt/quest1/MahasTest/camunda/northwind-reference-app/cluster/docker_volumes/postgres-web

@@ -1,0 +1,166 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P08" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:process id="fund-disbursement" name="Fund Disbursement" isExecutable="true">
+    <bpmn:startEvent id="start" name="Disbursement requested">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="svc_reserve_funds" />
+    <bpmn:serviceTask id="svc_reserve_funds" name="Reserve funds on ledger">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="reserve-funds" retries="3" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="svc_reserve_funds" targetRef="svc_manual_adjustment" />
+    <bpmn:serviceTask id="svc_manual_adjustment" name="Manual ledger adjustment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="manual-ledger-adjustment" retries="1" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f3" sourceRef="svc_manual_adjustment" targetRef="call_payment_instruction" />
+    <bpmn:serviceTask id="svc_release_reservation" name="Release fund reservation" isForCompensation="true">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="release-fund-reservation" />
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:boundaryEvent id="boundary_compensate_reservation" name="Compensate reservation" attachedToRef="svc_reserve_funds">
+      <bpmn:compensateEventDefinition id="boundary_compensate_reservation_def" />
+    </bpmn:boundaryEvent>
+    <bpmn:callActivity id="call_payment_instruction" name="Instruct payment">
+      <bpmn:extensionElements>
+        <zeebe:calledElement processId="payment-instruction" bindingType="latest" propagateAllParentVariables="true" propagateAllChildVariables="true" />
+        <zeebe:ioMapping>
+          <zeebe:input source="=applicationId" target="applicationId" />
+          <zeebe:input source="=approvedAmount" target="approvedAmount" />
+        </zeebe:ioMapping>
+      </bpmn:extensionElements>
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+    </bpmn:callActivity>
+    <bpmn:sequenceFlow id="f4" sourceRef="call_payment_instruction" targetRef="gw_payment_result" />
+    <bpmn:exclusiveGateway id="gw_payment_result" name="Payment succeeded?" default="f_payment_failed">
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f_payment_ok</bpmn:outgoing>
+      <bpmn:outgoing>f_payment_failed</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="f_payment_ok" name="Settled" sourceRef="gw_payment_result" targetRef="send_ledger_posted">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=paymentStatus = "settled"</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_payment_failed" name="Failed" sourceRef="gw_payment_result" targetRef="throw_compensate" />
+    <bpmn:intermediateThrowEvent id="throw_compensate" name="Trigger compensation">
+      <bpmn:incoming>f_payment_failed</bpmn:incoming>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+      <bpmn:compensateEventDefinition id="throw_compensate_def" activityRef="svc_reserve_funds" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:sequenceFlow id="f5" sourceRef="throw_compensate" targetRef="end_failed" />
+    <bpmn:endEvent id="end_failed" name="Disbursement failed">
+      <bpmn:incoming>f5</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:sendTask id="send_ledger_posted" name="Notify ledger posted">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="notify-ledger-posted" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_payment_ok</bpmn:incoming>
+      <bpmn:outgoing>f6</bpmn:outgoing>
+    </bpmn:sendTask>
+    <bpmn:sequenceFlow id="f6" sourceRef="send_ledger_posted" targetRef="throw_ledger_posted" />
+    <bpmn:intermediateThrowEvent id="throw_ledger_posted" name="Ledger posted event">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="publish-ledger-posted-message" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f6</bpmn:incoming>
+      <bpmn:outgoing>f7</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="throw_ledger_posted_def" messageRef="Message_LedgerPosted" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:sequenceFlow id="f7" sourceRef="throw_ledger_posted" targetRef="end_settled" />
+    <bpmn:endEvent id="end_settled" name="Disbursement settled">
+      <bpmn:incoming>f7</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:association id="assoc_compensate_reservation" associationDirection="None" sourceRef="boundary_compensate_reservation" targetRef="svc_release_reservation" />
+  </bpmn:process>
+  <bpmn:message id="Message_LedgerPosted" name="LedgerPosted">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=applicationId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_fund-disbursement">
+    <bpmndi:BPMNPlane id="BPMNPlane_fund-disbursement" bpmnElement="fund-disbursement">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_reserve_funds_di" bpmnElement="svc_reserve_funds">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="boundary_compensate_reservation_di" bpmnElement="boundary_compensate_reservation">
+        <dc:Bounds x="207" y="92" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_manual_adjustment_di" bpmnElement="svc_manual_adjustment">
+        <dc:Bounds x="325" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="call_payment_instruction_di" bpmnElement="call_payment_instruction">
+        <dc:Bounds x="475" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_payment_result_di" bpmnElement="gw_payment_result" isMarkerVisible="true">
+        <dc:Bounds x="650" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="send_ledger_posted_di" bpmnElement="send_ledger_posted">
+        <dc:Bounds x="775" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="throw_ledger_posted_di" bpmnElement="throw_ledger_posted">
+        <dc:Bounds x="957" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_settled_di" bpmnElement="end_settled">
+        <dc:Bounds x="1107" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_release_reservation_di" bpmnElement="svc_release_reservation">
+        <dc:Bounds x="25" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="throw_compensate_di" bpmnElement="throw_compensate">
+        <dc:Bounds x="807" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_failed_di" bpmnElement="end_failed">
+        <dc:Bounds x="957" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="475" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="575" y="70" />
+        <di:waypoint x="650" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_payment_ok_di" bpmnElement="f_payment_ok">
+        <di:waypoint x="700" y="70" />
+        <di:waypoint x="775" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_payment_failed_di" bpmnElement="f_payment_failed">
+        <di:waypoint x="675" y="95" />
+        <di:waypoint x="675" y="210" />
+        <di:waypoint x="807" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f6_di" bpmnElement="f6">
+        <di:waypoint x="875" y="70" />
+        <di:waypoint x="957" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f7_di" bpmnElement="f7">
+        <di:waypoint x="993" y="70" />
+        <di:waypoint x="1107" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="843" y="210" />
+        <di:waypoint x="957" y="210" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

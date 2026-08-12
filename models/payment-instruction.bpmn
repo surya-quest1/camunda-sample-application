@@ -1,0 +1,172 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P09" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:error id="Error_PaymentRailRejected" name="Payment Rail Rejected" errorCode="PAYMENT_RAIL_REJECTED" />
+  <bpmn:error id="Error_InsufficientFunds" name="Insufficient Funds" errorCode="INSUFFICIENT_FUNDS" />
+  <bpmn:process id="payment-instruction" name="Payment Instruction" isExecutable="true">
+    <bpmn:startEvent id="start" name="Instruction requested">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="sub_execute_leg" />
+    <bpmn:subProcess id="sub_execute_leg" name="Execute payment leg">
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+      <bpmn:startEvent id="sub_start" name="Leg started">
+        <bpmn:outgoing>sf1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="sf1" sourceRef="sub_start" targetRef="sub_svc_submit_leg" />
+      <bpmn:serviceTask id="sub_svc_submit_leg" name="Submit to payment rail">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="submit-payment-rail" retries="2" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>sf1</bpmn:incoming>
+        <bpmn:outgoing>sf2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:sequenceFlow id="sf2" sourceRef="sub_svc_submit_leg" targetRef="sub_end_settled" />
+      <bpmn:endEvent id="sub_end_settled" name="Leg settled">
+        <bpmn:incoming>sf2</bpmn:incoming>
+      </bpmn:endEvent>
+      <bpmn:subProcess id="sub_error_handling" name="Handle rail error" triggeredByEvent="true">
+        <bpmn:startEvent id="esp_start" name="Rail error caught">
+          <bpmn:outgoing>ef1</bpmn:outgoing>
+          <bpmn:errorEventDefinition id="esp_start_def" errorRef="Error_PaymentRailRejected" />
+        </bpmn:startEvent>
+        <bpmn:sequenceFlow id="ef1" sourceRef="esp_start" targetRef="esp_svc_retry_alt_rail" />
+        <bpmn:serviceTask id="esp_svc_retry_alt_rail" name="Retry via alternate rail">
+          <bpmn:extensionElements>
+            <zeebe:taskDefinition type="retry-alternate-rail" retries="1" />
+          </bpmn:extensionElements>
+          <bpmn:incoming>ef1</bpmn:incoming>
+          <bpmn:outgoing>ef2</bpmn:outgoing>
+        </bpmn:serviceTask>
+        <bpmn:sequenceFlow id="ef2" sourceRef="esp_svc_retry_alt_rail" targetRef="esp_end" />
+        <bpmn:endEvent id="esp_end" name="Error end">
+          <bpmn:incoming>ef2</bpmn:incoming>
+          <bpmn:errorEventDefinition id="esp_end_def" errorRef="Error_InsufficientFunds" />
+        </bpmn:endEvent>
+      </bpmn:subProcess>
+    </bpmn:subProcess>
+    <bpmn:sequenceFlow id="f2" sourceRef="sub_execute_leg" targetRef="link_throw_result" />
+    <bpmn:intermediateThrowEvent id="link_throw_result" name="To result handling">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:linkEventDefinition id="link_throw_result_def" name="ResultHandling" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:intermediateCatchEvent id="link_catch_result" name="Result handling">
+      <bpmn:outgoing>f3</bpmn:outgoing>
+      <bpmn:linkEventDefinition id="link_catch_result_def" name="ResultHandling" />
+    </bpmn:intermediateCatchEvent>
+    <bpmn:sequenceFlow id="f3" sourceRef="link_catch_result" targetRef="gw_large_value" />
+    <bpmn:exclusiveGateway id="gw_large_value" name="Large value leg?" default="f_settled_normal">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f_needs_review</bpmn:outgoing>
+      <bpmn:outgoing>f_settled_normal</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="f_needs_review" name="Large value" sourceRef="gw_large_value" targetRef="svc_flag_for_review">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=approvedAmount &gt; 50000</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_settled_normal" name="Standard" sourceRef="gw_large_value" targetRef="end_settled" />
+    <bpmn:serviceTask id="svc_flag_for_review" name="Flag for manual reconciliation review">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="flag-payment-for-review" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f_needs_review</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="f4" sourceRef="svc_flag_for_review" targetRef="end_flagged" />
+    <bpmn:endEvent id="end_flagged" name="Settled, flagged for review">
+      <bpmn:incoming>f4</bpmn:incoming>
+    </bpmn:endEvent>
+    <bpmn:endEvent id="end_settled" name="Payment settled">
+      <bpmn:incoming>f_settled_normal</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_payment-instruction">
+    <bpmndi:BPMNPlane id="BPMNPlane_payment-instruction" bpmnElement="payment-instruction">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_execute_leg_di" bpmnElement="sub_execute_leg">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="link_throw_result_di" bpmnElement="link_throw_result">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="link_catch_result_di" bpmnElement="link_catch_result">
+        <dc:Bounds x="57" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_large_value_di" bpmnElement="gw_large_value" isMarkerVisible="true">
+        <dc:Bounds x="200" y="185" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="svc_flag_for_review_di" bpmnElement="svc_flag_for_review">
+        <dc:Bounds x="325" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_flagged_di" bpmnElement="end_flagged">
+        <dc:Bounds x="507" y="192" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_settled_di" bpmnElement="end_settled">
+        <dc:Bounds x="357" y="332" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="93" y="210" />
+        <di:waypoint x="200" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_needs_review_di" bpmnElement="f_needs_review">
+        <di:waypoint x="250" y="210" />
+        <di:waypoint x="325" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_settled_normal_di" bpmnElement="f_settled_normal">
+        <di:waypoint x="225" y="235" />
+        <di:waypoint x="225" y="350" />
+        <di:waypoint x="357" y="350" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="425" y="210" />
+        <di:waypoint x="507" y="210" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="sub_start_di" bpmnElement="sub_start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_svc_submit_leg_di" bpmnElement="sub_svc_submit_leg">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_end_settled_di" bpmnElement="sub_end_settled">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_error_handling_di" bpmnElement="sub_error_handling">
+        <dc:Bounds x="25" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="esp_start_di" bpmnElement="esp_start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="esp_svc_retry_alt_rail_di" bpmnElement="esp_svc_retry_alt_rail">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="esp_end_di" bpmnElement="esp_end">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="ef1_di" bpmnElement="ef1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ef2_di" bpmnElement="ef2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

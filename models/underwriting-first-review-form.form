@@ -1,0 +1,42 @@
+{
+  "components": [
+    {
+      "label": "Applicant name",
+      "type": "textfield",
+      "id": "Field_ApplicantName",
+      "key": "applicantName",
+      "readonly": true
+    },
+    {
+      "label": "Affordability band",
+      "type": "textfield",
+      "id": "Field_AffordabilityBand",
+      "key": "affordabilityBand",
+      "readonly": true
+    },
+    {
+      "label": "Decision",
+      "type": "select",
+      "id": "Field_Decision",
+      "key": "underwritingDecision",
+      "values": [
+        { "label": "Approve", "value": "approved" },
+        { "label": "Refer for more information", "value": "referred" },
+        { "label": "Decline", "value": "declined" }
+      ],
+      "validate": { "required": true }
+    },
+    {
+      "label": "Notes",
+      "type": "textarea",
+      "id": "Field_Notes",
+      "key": "underwriterNotes"
+    }
+  ],
+  "schemaVersion": 4,
+  "exporter": { "name": "northwind-reference-app", "version": "1.0" },
+  "type": "default",
+  "id": "underwriting-first-review-form",
+  "executionPlatform": "Camunda Cloud",
+  "executionPlatformVersion": "8.8"
+}

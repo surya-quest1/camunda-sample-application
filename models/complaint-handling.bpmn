@@ -1,0 +1,180 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI" xmlns:dc="http://www.omg.org/spec/DD/20100524/DC" xmlns:di="http://www.omg.org/spec/DD/20100524/DI" xmlns:zeebe="http://camunda.org/schema/zeebe/1.0" id="Definitions_P14" targetNamespace="http://northwind-private-bank.example.com/bpmn" exporter="northwind-reference-app" exporterVersion="1.0">
+  <bpmn:escalation id="Escalation_RegulatoryBreach" name="Regulatory Breach" escalationCode="REGULATORY_BREACH" />
+  <bpmn:process id="complaint-handling" name="Complaint Handling" isExecutable="true">
+    <bpmn:startEvent id="start" name="Complaint received">
+      <bpmn:outgoing>f1</bpmn:outgoing>
+      <bpmn:messageEventDefinition id="start_def" messageRef="Message_ComplaintReceived" />
+    </bpmn:startEvent>
+    <bpmn:sequenceFlow id="f1" sourceRef="start" targetRef="ut_triage" />
+    <bpmn:userTask id="ut_triage" name="Triage complaint">
+      <bpmn:extensionElements>
+        <zeebe:userTask />
+        <zeebe:assignmentDefinition candidateGroups="complaints-team" />
+        <zeebe:priorityDefinition priority="50" />
+        <zeebe:formDefinition formId="complaint-triage-form" />
+      </bpmn:extensionElements>
+      <bpmn:incoming>f1</bpmn:incoming>
+      <bpmn:outgoing>f2</bpmn:outgoing>
+    </bpmn:userTask>
+    <bpmn:sequenceFlow id="f2" sourceRef="ut_triage" targetRef="mt_acknowledge" />
+    <bpmn:manualTask id="mt_acknowledge" name="Send acknowledgement letter">
+      <bpmn:incoming>f2</bpmn:incoming>
+      <bpmn:outgoing>f3</bpmn:outgoing>
+    </bpmn:manualTask>
+    <bpmn:sequenceFlow id="f3" sourceRef="mt_acknowledge" targetRef="gw_severity" />
+    <bpmn:exclusiveGateway id="gw_severity" name="Severity" default="f_standard">
+      <bpmn:incoming>f3</bpmn:incoming>
+      <bpmn:outgoing>f_breach</bpmn:outgoing>
+      <bpmn:outgoing>f_standard</bpmn:outgoing>
+    </bpmn:exclusiveGateway>
+    <bpmn:sequenceFlow id="f_breach" name="Regulatory breach" sourceRef="gw_severity" targetRef="esc_breach">
+      <bpmn:conditionExpression xsi:type="bpmn:tFormalExpression">=isRegulatoryBreach</bpmn:conditionExpression>
+    </bpmn:sequenceFlow>
+    <bpmn:sequenceFlow id="f_standard" name="Standard" sourceRef="gw_severity" targetRef="sub_investigate" />
+    <bpmn:intermediateThrowEvent id="esc_breach" name="Escalate regulatory breach">
+      <bpmn:incoming>f_breach</bpmn:incoming>
+      <bpmn:outgoing>f4</bpmn:outgoing>
+      <bpmn:escalationEventDefinition id="esc_breach_def" escalationRef="Escalation_RegulatoryBreach" />
+    </bpmn:intermediateThrowEvent>
+    <bpmn:sequenceFlow id="f4" sourceRef="esc_breach" targetRef="sub_investigate" />
+    <bpmn:subProcess id="sub_investigate" name="Investigate complaint">
+      <bpmn:incoming>f_standard</bpmn:incoming>
+      <bpmn:incoming>f4</bpmn:incoming>
+      <bpmn:outgoing>f5</bpmn:outgoing>
+      <bpmn:startEvent id="sub_start" name="Investigation started">
+        <bpmn:outgoing>sf1</bpmn:outgoing>
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="sf1" sourceRef="sub_start" targetRef="sub_undefined_investigate" />
+      <bpmn:task id="sub_undefined_investigate" name="Gather case facts">
+        <bpmn:incoming>sf1</bpmn:incoming>
+        <bpmn:outgoing>sf2</bpmn:outgoing>
+      </bpmn:task>
+      <bpmn:sequenceFlow id="sf2" sourceRef="sub_undefined_investigate" targetRef="sub_end" />
+      <bpmn:endEvent id="sub_end" name="Investigation complete">
+        <bpmn:incoming>sf2</bpmn:incoming>
+      </bpmn:endEvent>
+    </bpmn:subProcess>
+    <bpmn:sequenceFlow id="f5" sourceRef="sub_investigate" targetRef="end" />
+    <bpmn:subProcess id="event_status_chaser" name="Status chaser" triggeredByEvent="true">
+      <bpmn:startEvent id="esp_start" name="Chase timer" isInterrupting="false">
+        <bpmn:outgoing>ef1</bpmn:outgoing>
+        <bpmn:timerEventDefinition id="esp_start_def">
+          <bpmn:timeCycle>R/P5D</bpmn:timeCycle>
+        </bpmn:timerEventDefinition>
+      </bpmn:startEvent>
+      <bpmn:sequenceFlow id="ef1" sourceRef="esp_start" targetRef="esp_svc_send_update" />
+      <bpmn:serviceTask id="esp_svc_send_update" name="Send status update">
+        <bpmn:extensionElements>
+          <zeebe:taskDefinition type="send-complaint-status-update" />
+        </bpmn:extensionElements>
+        <bpmn:incoming>ef1</bpmn:incoming>
+        <bpmn:outgoing>ef2</bpmn:outgoing>
+      </bpmn:serviceTask>
+      <bpmn:sequenceFlow id="ef2" sourceRef="esp_svc_send_update" targetRef="esp_end" />
+      <bpmn:endEvent id="esp_end" name="Update sent">
+        <bpmn:incoming>ef2</bpmn:incoming>
+      </bpmn:endEvent>
+    </bpmn:subProcess>
+    <bpmn:endEvent id="end" name="Complaint resolved">
+      <bpmn:incoming>f5</bpmn:incoming>
+    </bpmn:endEvent>
+  </bpmn:process>
+  <bpmn:message id="Message_ComplaintReceived" name="ComplaintReceived">
+    <bpmn:extensionElements>
+      <zeebe:subscription correlationKey="=complaintId" />
+    </bpmn:extensionElements>
+  </bpmn:message>
+  <bpmndi:BPMNDiagram id="BPMNDiagram_complaint-handling">
+    <bpmndi:BPMNPlane id="BPMNPlane_complaint-handling" bpmnElement="complaint-handling">
+      <bpmndi:BPMNShape id="start_di" bpmnElement="start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="ut_triage_di" bpmnElement="ut_triage">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="mt_acknowledge_di" bpmnElement="mt_acknowledge">
+        <dc:Bounds x="325" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="gw_severity_di" bpmnElement="gw_severity" isMarkerVisible="true">
+        <dc:Bounds x="500" y="45" width="50" height="50" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="esc_breach_di" bpmnElement="esc_breach">
+        <dc:Bounds x="657" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_investigate_di" bpmnElement="sub_investigate">
+        <dc:Bounds x="775" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="end_di" bpmnElement="end">
+        <dc:Bounds x="957" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="event_status_chaser_di" bpmnElement="event_status_chaser">
+        <dc:Bounds x="25" y="170" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="f1_di" bpmnElement="f1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f2_di" bpmnElement="f2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="325" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f3_di" bpmnElement="f3">
+        <di:waypoint x="425" y="70" />
+        <di:waypoint x="500" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_breach_di" bpmnElement="f_breach">
+        <di:waypoint x="550" y="70" />
+        <di:waypoint x="657" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f_standard_di" bpmnElement="f_standard">
+        <di:waypoint x="525" y="95" />
+        <di:waypoint x="525" y="140" />
+        <di:waypoint x="825" y="140" />
+        <di:waypoint x="825" y="110" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f4_di" bpmnElement="f4">
+        <di:waypoint x="693" y="70" />
+        <di:waypoint x="775" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="f5_di" bpmnElement="f5">
+        <di:waypoint x="875" y="70" />
+        <di:waypoint x="957" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="esp_start_di" bpmnElement="esp_start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="esp_svc_send_update_di" bpmnElement="esp_svc_send_update">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="esp_end_di" bpmnElement="esp_end">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="ef1_di" bpmnElement="ef1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="ef2_di" bpmnElement="ef2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNShape id="sub_start_di" bpmnElement="sub_start">
+        <dc:Bounds x="57" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_undefined_investigate_di" bpmnElement="sub_undefined_investigate">
+        <dc:Bounds x="175" y="30" width="100" height="80" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNShape id="sub_end_di" bpmnElement="sub_end">
+        <dc:Bounds x="357" y="52" width="36" height="36" />
+      </bpmndi:BPMNShape>
+      <bpmndi:BPMNEdge id="sf1_di" bpmnElement="sf1">
+        <di:waypoint x="93" y="70" />
+        <di:waypoint x="175" y="70" />
+      </bpmndi:BPMNEdge>
+      <bpmndi:BPMNEdge id="sf2_di" bpmnElement="sf2">
+        <di:waypoint x="275" y="70" />
+        <di:waypoint x="357" y="70" />
+      </bpmndi:BPMNEdge>
+    </bpmndi:BPMNPlane>
+  </bpmndi:BPMNDiagram>
+</bpmn:definitions>

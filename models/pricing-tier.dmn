@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<definitions xmlns="https://www.omg.org/spec/DMN/20191111/MODEL/"
+             xmlns:camunda="http://camunda.org/schema/1.0/dmn"
+             id="Definitions_PricingTier"
+             name="Pricing Tier"
+             namespace="http://northwind-private-bank.example.com/dmn/pricing-tier"
+             exporter="northwind-reference-app" exporterVersion="1.0">
+
+  <!-- Invoked from a job-worker business rule task in P13 (regulatory-reporting-batch),
+       not in-broker: the business-rule-task job-worker classification. -->
+  <decision id="pricing-tier" name="Pricing Tier">
+    <decisionTable id="DecisionTable_PricingTier" hitPolicy="FIRST">
+      <input id="Input_Band" label="Affordability Band">
+        <inputExpression id="InputExpression_Band" typeRef="string">
+          <text>affordabilityBand</text>
+        </inputExpression>
+      </input>
+      <input id="Input_Amount" label="Requested Amount">
+        <inputExpression id="InputExpression_Amount" typeRef="number">
+          <text>requestedAmount</text>
+        </inputExpression>
+      </input>
+      <output id="Output_Tier" label="Interest Rate Tier" name="interestRateTier" typeRef="string" />
+      <rule id="Rule_Tier1">
+        <inputEntry id="InputEntry_Tier1a"><text>"HIGH"</text></inputEntry>
+        <inputEntry id="InputEntry_Tier1b"><text>&gt; 100000</text></inputEntry>
+        <outputEntry id="OutputEntry_Tier1"><text>"PREMIUM"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Tier2">
+        <inputEntry id="InputEntry_Tier2a"><text>"HIGH"</text></inputEntry>
+        <inputEntry id="InputEntry_Tier2b"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_Tier2"><text>"STANDARD_PLUS"</text></outputEntry>
+      </rule>
+      <rule id="Rule_Tier3">
+        <inputEntry id="InputEntry_Tier3a"><text>-</text></inputEntry>
+        <inputEntry id="InputEntry_Tier3b"><text>-</text></inputEntry>
+        <outputEntry id="OutputEntry_Tier3"><text>"STANDARD"</text></outputEntry>
+      </rule>
+    </decisionTable>
+  </decision>
+
+</definitions>

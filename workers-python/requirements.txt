@@ -1,0 +1,3 @@
+pyzeebe==4.*
+httpx==0.27.*
+grpcio==1.*
