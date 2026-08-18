@@ -1,13 +1,20 @@
 camunda:
   client:
-    mode: self-managed
+    # self-managed (local docker-compose) | saas (Camunda SaaS).
+    # In saas mode the starter derives grpc/rest/token endpoints from
+    # cloud.cluster-id + cloud.region and ignores the *_ADDRESS / token-url
+    # defaults below. See https://docs.camunda.io/docs/apis-tools/camunda-spring-boot-starter/properties-reference/
+    mode: ${CAMUNDA_CLIENT_MODE:self-managed}
+    cloud:
+      cluster-id: ${CAMUNDA_CLIENT_CLOUD_CLUSTERID:}
+      region: ${CAMUNDA_CLIENT_CLOUD_REGION:}
     grpc-address: ${ZEEBE_GRPC_ADDRESS:http://localhost:26500}
     rest-address: ${ZEEBE_REST_ADDRESS:http://localhost:8088}
     auth:
       method: ${CAMUNDA_AUTH_METHOD:oidc}   # oidc | basic | none -- matches the intro-phase auth modes
       client-id: ${CAMUNDA_CLIENT_ID:orchestration}
       client-secret: ${CAMUNDA_CLIENT_SECRET:secret}
-      token-url: ${CAMUNDA_OAUTH_TOKEN_URL:http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}
+      token-url: ${CAMUNDA_OAUTH_URL:http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}
       audience: ${CAMUNDA_TOKEN_AUDIENCE:orchestration-api}
 
 logging:

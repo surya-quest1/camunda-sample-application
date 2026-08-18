@@ -10,6 +10,8 @@ this only adds fresh instances against the now-fixed process definitions.
 Reuses ClockController/ApiClient exactly like run_seed.py, over a shorter
 7-day window -- enough to populate the assessment tool's runtime window.
 """
+import argparse
+import os
 import random
 import sys
 import time
@@ -23,13 +25,18 @@ def log(msg: str) -> None:
 
 
 def main() -> None:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--base-url", default=os.environ.get("ZEEBE_REST_ADDRESS", "http://localhost:8088"))
+    p.add_argument("--token-url", default=os.environ.get("CAMUNDA_OAUTH_URL", "http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token"))
+    p.add_argument("--client-id", default=os.environ.get("CAMUNDA_CLIENT_ID", "orchestration"))
+    p.add_argument("--client-secret", default=os.environ.get("CAMUNDA_CLIENT_SECRET", "secret"))
+    p.add_argument("--audience", default=os.environ.get("CAMUNDA_TOKEN_AUDIENCE"))
+    args = p.parse_args()
+
     rng = random.Random(43)
-    client = ApiClient(
-        "http://localhost:8088",
-        "http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token",
-        "orchestration", "secret",
-    )
-    clock = ClockController("http://localhost:8088", client.token)
+    client = ApiClient(args.base_url, args.token_url, args.client_id, args.client_secret,
+                       audience=args.audience)
+    clock = ClockController(args.base_url, client.token)
 
     try:
         for day in range(-7, 1):

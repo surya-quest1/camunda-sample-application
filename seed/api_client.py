@@ -8,26 +8,28 @@ import httpx
 
 
 class ApiClient:
-    def __init__(self, base_url: str, token_url: str, client_id: str, client_secret: str):
+    def __init__(self, base_url: str, token_url: str, client_id: str, client_secret: str,
+                 audience: str | None = None):
         self.base_url = base_url.rstrip("/")
         self._token_url = token_url
         self._client_id = client_id
         self._client_secret = client_secret
+        self._audience = audience
         self._token = None
         self._token_expiry = 0.0
 
     def token(self) -> str:
         if self._token and time.time() < self._token_expiry - 15:
             return self._token
-        resp = httpx.post(
-            self._token_url,
-            data={
-                "grant_type": "client_credentials",
-                "client_id": self._client_id,
-                "client_secret": self._client_secret,
-            },
-            timeout=10.0,
-        )
+        data = {
+            "grant_type": "client_credentials",
+            "client_id": self._client_id,
+            "client_secret": self._client_secret,
+        }
+        # Camunda SaaS OAuth requires `audience`; local Keycloak ignores it.
+        if self._audience:
+            data["audience"] = self._audience
+        resp = httpx.post(self._token_url, data=data, timeout=10.0)
         resp.raise_for_status()
         data = resp.json()
         self._token = data["access_token"]

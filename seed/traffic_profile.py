@@ -14,6 +14,7 @@ Pass --scale on the CLI to dial this back up for a higher-fidelity run.
 """
 from dataclasses import dataclass, field
 from typing import Callable, Optional
+import os
 import random
 
 
@@ -24,7 +25,8 @@ class ProcessProfile:
     variables: Callable[[random.Random, int, str], dict]  # (rng, day_index, application_id) -> vars
     directly_startable: bool = True  # has a plain "none" start event
     version: Optional[int] = None  # pin a specific version (fx-settlement v1/v2)
-    tenant_id: str = "<default>"
+    # <default> for self-managed; override DEFAULT_TENANT_ID for SaaS.
+    tenant_id: str = field(default_factory=lambda: os.environ.get("DEFAULT_TENANT_ID", "<default>"))
 
 
 def _app_id(prefix: str, day: int, seq: int) -> str:

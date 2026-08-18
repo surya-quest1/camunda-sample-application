@@ -36,8 +36,9 @@ cd cluster && docker compose -f docker-compose-full.yaml up -d
 cd .. && for s in scripts/gen_*.py; do python3 "$s"; done
 cd scripts/bpmn-auto-layout && npm install && node layout.mjs && cd ../..
 
-# 3. Deploy the estate
-bash scripts/deploy.sh
+# 3. Deploy the estate (MULTI_TENANCY=true for the local cluster's
+#    multi-tenant setup; defaults to false for SaaS compatibility)
+MULTI_TENANCY=true bash scripts/deploy.sh
 
 # 4. Start the workers (separate terminals)
 cd workers-java && mvn spring-boot:run
@@ -76,10 +77,126 @@ before bringing the stack up (this machine has 18GB; raised to 10GB/6 CPUs).
 
 ## Multi-tenancy
 
-On by default (`.env`: `CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true`).
-Every deploy/create-instance call needs an explicit `tenantId` — the
-default tenant's literal ID is the string `<default>` (with angle brackets).
-`scripts/deploy.sh` handles this; if calling the API directly with `curl -F`,
+On by default in the local docker-compose cluster (`.env`:
+`CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true`). Every deploy/create-instance
+call needs an explicit `tenantId` — the default tenant's literal ID is the
+string `<default>` (with angle brackets). `scripts/deploy.sh` handles this
+when `MULTI_TENANCY=true`; if calling the API directly with `curl -F`,
 use `--form-string "tenantId=<default>"`, not `-F` (curl's `-F` treats a
 leading `<` as "read this field's value from a file").
+
+`deploy.sh` defaults to `MULTI_TENANCY=false` (single-tenant, for SaaS
+compatibility). Set `MULTI_TENANCY=true` for the local cluster to create
+the `retail` / `private-bank` tenants and deploy the tenant-scoped subset.
+See "Deploying to Camunda SaaS" below for the full multi-tenancy toggle
+details.
+
+## Deploying to Camunda SaaS
+
+The estate is dual-target: every script, worker, and the seed driver read
+their cluster endpoints and credentials from environment variables with
+local-cluster defaults, so pointing the same code at Camunda SaaS is just a
+set of exports — no code changes, no separate branch.
+
+### Prerequisites in Camunda Console
+
+1. **Create a cluster** (8.8.x to match `workers-java/pom.xml`'s
+   `version.camunda`). Multi-tenancy is optional — the estate deploys to
+   the default tenant by default. If you want the `retail` / `private-bank`
+   tenant-scoped subset, create a **multi-tenant** cluster (creation-time
+   setting, can't be flipped later) and set `MULTI_TENANCY=true` when
+   deploying.
+2. **Create an API client** (Console → cluster → API tab) with **Orchestration**
+   scope (covers Zeebe REST + gRPC). Note the **Client ID**, **Client
+   Secret**, and the **Zeebe audience** Console shows (region-scoped).
+3. Note the **Cluster ID**, **Region** (e.g. `sin-2`), and the **REST base
+   URL** and **gRPC address** from Console's API tab — copy them from
+   Console rather than guessing. Gen2 clusters use `api.camunda.io`,
+   older ones use `zeebe.camunda.io`.
+
+### Environment exports
+
+```bash
+export CAMUNDA_CLIENT_MODE=saas
+export CAMUNDA_CLIENT_CLOUD_CLUSTERID=<from Console>
+export CAMUNDA_CLIENT_CLOUD_REGION=<e.g. sin-2>
+export CAMUNDA_CLIENT_ID=<api client id>
+export CAMUNDA_CLIENT_SECRET=<api client secret>
+export CAMUNDA_TOKEN_AUDIENCE=<zeebe audience from Console, e.g. zeebe.camunda.io>
+export CAMUNDA_OAUTH_URL=https://login.cloud.camunda.io/oauth/token
+# REST base URL for deploy.sh + seed driver -- copy from Console's API tab:
+export ZEEBE_REST_ADDRESS=https://<region>.api.camunda.io/<cluster-id>      # Gen2
+# or: https://<region>.zeebe.camunda.io/<cluster-id>                       # Gen1
+# gRPC address for the Python workers (TLS host, not localhost):
+export ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443
+# Multi-tenancy: false (default) deploys to the default tenant only.
+# Set to true ONLY if your cluster was created as multi-tenant.
+export MULTI_TENANCY=false
+```
+
+### Deploy + run workers + seed
+
+```bash
+# 1. Deploy the estate (idempotent). MULTI_TENANCY defaults to false
+#    (single-tenant); set MULTI_TENANCY=true for a multi-tenant cluster.
+bash scripts/deploy.sh
+
+# 2. Java workers -- saas mode tells spring-zeebe to derive endpoints
+#    from cloud.cluster-id + cloud.region (the *_ADDRESS / token-url
+#    defaults in application.yaml are ignored in saas mode)
+cd workers-java && mvn spring-boot:run
+
+# 3. Python workers -- no OAUTHLIB_INSECURE_TRANSPORT (that's local-only);
+#    worker_setup.py auto-detects TLS from ZEEBE_GRPC_ADDRESS
+cd workers-python && .venv/bin/python -m northwind_workers.main
+
+# 4. Seed driver (picks up ZEEBE_REST_ADDRESS / CAMUNDA_OAUTH_URL /
+#    CAMUNDA_CLIENT_ID / CAMUNDA_CLIENT_SECRET from env automatically;
+#    CLI flags still override if you need to differ)
+.venv/bin/python seed/run_seed.py --days 45 --seed 42
+
+# 5. Assessment tool
+bash scripts/verify.sh
+```
+
+### Multi-tenancy
+
+`deploy.sh` defaults to `MULTI_TENANCY=false` — it deploys the base estate
+(16 BPMN + 3 DMN + 5 forms) and fx-settlement v2/v3 to the default tenant
+only, and skips tenant creation + tenant-scoped deploys entirely. This
+works on any cluster (SaaS or self-managed, single- or multi-tenant).
+
+For the full estate design (D6 — `retail` / `private-bank` tenants with a
+tenant-scoped subset deployed into each), set `MULTI_TENANCY=true`. This
+requires a **multi-tenant cluster** — on SaaS, multi-tenancy is a
+creation-time setting that can't be enabled later. On the local
+docker-compose cluster, it's controlled by
+`CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true` in `cluster/.env`
+(enabled by default).
+
+### What does NOT work on SaaS
+
+**Clock control (`seed/clock.py`) is a self-managed-only API.** The
+`PUT /v2/clock` endpoint that pins the broker's engine clock is disabled on
+Camunda SaaS, so the seed driver's simulated-past design (45 days of
+backdated, pinned-clock history) will not work against SaaS regardless of
+configuration. `run_seed.py` will run but every `clock.pin*` call will fail
+and instances get real-time timestamps instead of backdated ones.
+
+If backdated history is the point of this estate (and the README's
+"reproducible 45-day simulated-time seeding" framing suggests it is),
+self-managed is the correct target. SaaS works for live/forward-only
+demos and worker validation, but not for the assessment tool's
+historical-window scan.
+
+### What's different from local, at a glance
+
+| Thing | Local | SaaS |
+|---|---|---|
+| Java worker mode | `self-managed` (default) | `CAMUNDA_CLIENT_MODE=saas` |
+| Python worker TLS | plaintext (`grpc.local_channel_credentials`) | TLS (auto-detected from address) |
+| `OAUTHLIB_INSECURE_TRANSPORT` | `1` (required) | unset |
+| Token URL | Keycloak `localhost:18080` | `login.cloud.camunda.io/oauth/token` |
+| Multi-tenancy | `MULTI_TENANCY=true` (default in `cluster/.env`) | `MULTI_TENANCY=false` (default) |
+| Clock control | works (`PUT /v2/clock`) | **disabled** — seed driver can't pin |
 

@@ -30,7 +30,7 @@ it won't come along with a plain `git clone`. Two options:
    fine for a local/lab deployment): `scp dev-machine:northwind-reference-app/cluster/.env jetson:northwind-reference-app/cluster/.env`
 2. **Author a fresh one.** It needs, at minimum:
    - Image version pins (`CAMUNDA_VERSION=8.8.34`, `CAMUNDA_CONNECTORS_VERSION`, `CAMUNDA_IDENTITY_VERSION`, etc. — copy these unmodified, they're not secrets)
-   - `ORCHESTRATION_CLIENT_ID=orchestration`, `ORCHESTRATION_CLIENT_SECRET=<pick a value>` — this is the credential every script in this repo (`deploy.sh`, `verify.sh`, `seed/run_seed.py`, both worker services) authenticates with; if you change it from the default `secret`, you must pass the same value to every script below via `--client-secret` / `ORCHESTRATION_CLIENT_SECRET` / `CAMUNDA_OIDC_CLIENT_SECRET`
+   - `ORCHESTRATION_CLIENT_ID=orchestration`, `ORCHESTRATION_CLIENT_SECRET=<pick a value>` — the credential the **docker-compose bundle** (Orchestration, Connectors, Web Modeler) authenticates with. Our scripts and workers read `CAMUNDA_CLIENT_ID` / `CAMUNDA_CLIENT_SECRET` instead (same default `orchestration` / `secret`); set both to the same value in `.env` so the cluster and the scripts share one credential.
    - `CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true`, `CAMUNDA_SECURITY_MULTITENANCY_APIENABLED=true` (multi-tenancy is on by design in this estate)
    - The Identity/Keycloak/Web-Modeler/Console/Optimize client secrets and Postgres passwords (any values work for a local/lab stack — they just need to be internally consistent, since Keycloak and each service read the same `.env`)
    - `HOST=localhost`, `KEYCLOAK_HOST=host.docker.internal`
@@ -86,7 +86,9 @@ cd ../..
 
 ```bash
 # 3. Deploy the estate (idempotent -- safe to re-run)
-bash scripts/deploy.sh
+#    MULTI_TENANCY=true for the local cluster's multi-tenant setup
+#    (deploy.sh defaults to false for SaaS compatibility)
+MULTI_TENANCY=true bash scripts/deploy.sh
 ```
 
 ```bash
@@ -129,19 +131,20 @@ python3.12 -m venv .venv && .venv/bin/pip install httpx   # the only third-party
   --base-url http://localhost:8088 \
   --token-url http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token \
   --client-id orchestration \
-  --client-secret "$ORCHESTRATION_CLIENT_SECRET"
+  --client-secret "$CAMUNDA_CLIENT_SECRET"
 ```
 
-Flags (all optional, shown with their defaults from `seed/run_seed.py`):
+Flags (all optional; defaults also fall back to env vars `ZEEBE_REST_ADDRESS`,
+`CAMUNDA_OAUTH_URL`, `CAMUNDA_CLIENT_ID`, `CAMUNDA_CLIENT_SECRET` if set):
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `--days` | `45` | simulated days of history to produce |
 | `--scale` | `1.0` | multiplier on `traffic_profile.py`'s daily rates — turn down for a quick smoke test, e.g. `--scale 0.2` |
 | `--seed` | `42` | RNG seed — fixes the *shape* of the run (same cohort sizes, same signal timing) but not exact generated instance keys; use the same seed to reproduce an equivalent dataset on any cluster |
-| `--base-url` | `http://localhost:8088` | point this at the Jetson's own `8088` if running the script from elsewhere on the network |
-| `--token-url` | Keycloak realm token endpoint | same host substitution as above |
-| `--client-id` / `--client-secret` | `orchestration` / `secret` | must match `cluster/.env`'s `ORCHESTRATION_CLIENT_ID`/`_SECRET` |
+| `--base-url` | `http://localhost:8088` (or `$ZEEBE_REST_ADDRESS`) | point this at the Jetson's own `8088` if running the script from elsewhere on the network |
+| `--token-url` | Keycloak realm token endpoint (or `$CAMUNDA_OAUTH_URL`) | same host substitution as above |
+| `--client-id` / `--client-secret` | `orchestration` / `secret` (or `$CAMUNDA_CLIENT_ID` / `$CAMUNDA_CLIENT_SECRET`) | must match the credential in `cluster/.env` (`ORCHESTRATION_CLIENT_ID`/`_SECRET` for the cluster, `CAMUNDA_CLIENT_ID`/`_SECRET` for the scripts — set both to the same value) |
 | `--dry-run` | off | prints the planned cohort/day schedule without calling the cluster — useful to sanity-check timing before committing to a real run |
 
 This is the same script, run the same way, that produced the dev machine's
@@ -154,7 +157,10 @@ if you just want to confirm the schedule.
 
 `seed/reseed_fixes.py` is a lighter, faster **partial** reseed (7 days,
 `seed=43`, 3 specific processes) — only useful if you're validating a
-one-off process fix, not for the primary full-history run.
+one-off process fix, not for the primary full-history run. It takes the
+same `--base-url` / `--token-url` / `--client-id` / `--client-secret`
+flags as `run_seed.py` (same defaults), so pointing it at a non-local
+cluster is the same override pattern.
 
 After a large seed completes, **wait ~60–120 seconds before running the
 assessment tool** — Elasticsearch's search index lags behind the raw event
@@ -188,12 +194,14 @@ building natively on the Jetson, not cross-compiling from macOS).
 
 - **`OAUTHLIB_INSECURE_TRANSPORT=1`** is required for the Python workers
   against this non-TLS local cluster, on any host — not Jetson-specific,
-  just easy to forget on a fresh setup.
-- **`--form-string`, not `-F`**, for any direct `curl` deployment call — the
-  default tenant's literal ID is the string `<default>` (with angle
-  brackets); `curl -F` misreads the leading `<` as "read this field from a
-  file". `scripts/deploy.sh` already handles this; only matters if you're
-  crafting your own calls.
+  just easy to forget on a fresh setup. **Do not set it for SaaS** — SaaS
+  uses TLS and the Python worker auto-detects from `ZEEBE_GRPC_ADDRESS`.
+- **`--form-string`, not `-F`**, for any direct `curl` deployment call —
+  the default tenant's literal ID is the string `<default>` (with angle
+  brackets) on self-managed; `curl -F` misreads the leading `<` as "read
+  this field from a file". `scripts/deploy.sh` already handles this via
+  `DEFAULT_TENANT_ID` (env-overridable, defaults to `<default>`); only
+  matters if you're crafting your own calls.
 - No Jetson-specific container images are needed anywhere in this stack —
   every image in `cluster/docker-compose-full.yaml` (Camunda, Elasticsearch,
   Keycloak, Postgres, Mailpit) publishes official `linux/arm64` manifests,
@@ -210,3 +218,32 @@ multi-pool BPMN files) have been applied directly to `shinro`'s
 `tools/camunda/assessment-tool`. Any `shinro` checkout pulled after that
 change already has them — `scripts/verify.sh` on a fresh Jetson clone will
 build the fixed binary with no extra steps.
+
+## Camunda SaaS instead of self-managed
+
+Everything above assumes the local docker-compose cluster. The same repo
+also targets Camunda SaaS with no code changes — every script, worker, and
+the seed driver read cluster endpoints and credentials from environment
+variables with local-cluster defaults. See the root [README.md](../README.md)'s
+"Deploying to Camunda SaaS" section for the full env-var list and the
+prerequisites in Camunda Console (API client, region/cluster IDs).
+
+Quick summary of what changes for SaaS vs the local steps above:
+
+- **Skip step 1** (no `docker compose up` — the cluster is in Console).
+- **Step 3** (`deploy.sh`): export `ZEEBE_REST_ADDRESS`, `CAMUNDA_OAUTH_URL`,
+  `CAMUNDA_CLIENT_ID`, `CAMUNDA_CLIENT_SECRET`, `CAMUNDA_TOKEN_AUDIENCE`
+  first. `MULTI_TENANCY` defaults to `false` (single-tenant) — set to
+  `true` only if your cluster was created as multi-tenant.
+- **Step 4** (workers): Java needs `CAMUNDA_CLIENT_MODE=saas` +
+  `CAMUNDA_CLIENT_CLOUD_CLUSTERID` + `CAMUNDA_CLIENT_CLOUD_REGION`; Python needs
+  `ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443` and
+  **no** `OAUTHLIB_INSECURE_TRANSPORT`.
+- **Seed driver**: picks up `ZEEBE_REST_ADDRESS` / `CAMUNDA_OAUTH_URL` /
+  `CAMUNDA_CLIENT_ID` / `CAMUNDA_CLIENT_SECRET` / `CAMUNDA_TOKEN_AUDIENCE`
+  from env automatically — no CLI flags needed once the exports above are set.
+- **Clock control does not work on SaaS** — `PUT /v2/clock` is a
+  self-managed-only API, so the seed driver's simulated-past pinning will
+  fail against SaaS. Forward-only / live demos work; the backdated
+  45-day history that the assessment tool is designed to scan does not.
+  If the historical window is the point, stay self-managed.
