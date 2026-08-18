@@ -30,7 +30,7 @@ it won't come along with a plain `git clone`. Two options:
    fine for a local/lab deployment): `scp dev-machine:northwind-reference-app/cluster/.env jetson:northwind-reference-app/cluster/.env`
 2. **Author a fresh one.** It needs, at minimum:
    - Image version pins (`CAMUNDA_VERSION=8.8.34`, `CAMUNDA_CONNECTORS_VERSION`, `CAMUNDA_IDENTITY_VERSION`, etc. — copy these unmodified, they're not secrets)
-   - `ORCHESTRATION_CLIENT_ID=orchestration`, `ORCHESTRATION_CLIENT_SECRET=<pick a value>` — this is the credential every script in this repo (`deploy.sh`, `verify.sh`, `seed/run_seed.py`, both worker services) authenticates with; if you change it from the default `secret`, you must pass the same value to every script below via `--client-secret` / `ORCHESTRATION_CLIENT_SECRET` / `CAMUNDA_OIDC_CLIENT_SECRET`
+   - `ORCHESTRATION_CLIENT_ID=orchestration`, `ORCHESTRATION_CLIENT_SECRET=<pick a value>` — the credential the **docker-compose bundle** (Orchestration, Connectors, Web Modeler) authenticates with. Our scripts and workers read `CAMUNDA_CLIENT_ID` / `CAMUNDA_CLIENT_SECRET` instead (same default `orchestration` / `secret`); set both to the same value in `.env` so the cluster and the scripts share one credential.
    - `CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true`, `CAMUNDA_SECURITY_MULTITENANCY_APIENABLED=true` (multi-tenancy is on by design in this estate)
    - The Identity/Keycloak/Web-Modeler/Console/Optimize client secrets and Postgres passwords (any values work for a local/lab stack — they just need to be internally consistent, since Keycloak and each service read the same `.env`)
    - `HOST=localhost`, `KEYCLOAK_HOST=host.docker.internal`
@@ -129,19 +129,20 @@ python3.12 -m venv .venv && .venv/bin/pip install httpx   # the only third-party
   --base-url http://localhost:8088 \
   --token-url http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token \
   --client-id orchestration \
-  --client-secret "$ORCHESTRATION_CLIENT_SECRET"
+  --client-secret "$CAMUNDA_CLIENT_SECRET"
 ```
 
-Flags (all optional, shown with their defaults from `seed/run_seed.py`):
+Flags (all optional; defaults also fall back to env vars `ZEEBE_REST_ADDRESS`,
+`CAMUNDA_OAUTH_URL`, `CAMUNDA_CLIENT_ID`, `CAMUNDA_CLIENT_SECRET` if set):
 
 | Flag | Default | Purpose |
 |---|---|---|
 | `--days` | `45` | simulated days of history to produce |
 | `--scale` | `1.0` | multiplier on `traffic_profile.py`'s daily rates — turn down for a quick smoke test, e.g. `--scale 0.2` |
 | `--seed` | `42` | RNG seed — fixes the *shape* of the run (same cohort sizes, same signal timing) but not exact generated instance keys; use the same seed to reproduce an equivalent dataset on any cluster |
-| `--base-url` | `http://localhost:8088` | point this at the Jetson's own `8088` if running the script from elsewhere on the network |
-| `--token-url` | Keycloak realm token endpoint | same host substitution as above |
-| `--client-id` / `--client-secret` | `orchestration` / `secret` | must match `cluster/.env`'s `ORCHESTRATION_CLIENT_ID`/`_SECRET` |
+| `--base-url` | `http://localhost:8088` (or `$ZEEBE_REST_ADDRESS`) | point this at the Jetson's own `8088` if running the script from elsewhere on the network |
+| `--token-url` | Keycloak realm token endpoint (or `$CAMUNDA_OAUTH_URL`) | same host substitution as above |
+| `--client-id` / `--client-secret` | `orchestration` / `secret` (or `$CAMUNDA_CLIENT_ID` / `$CAMUNDA_CLIENT_SECRET`) | must match the credential in `cluster/.env` (`ORCHESTRATION_CLIENT_ID`/`_SECRET` for the cluster, `CAMUNDA_CLIENT_ID`/`_SECRET` for the scripts — set both to the same value) |
 | `--dry-run` | off | prints the planned cohort/day schedule without calling the cluster — useful to sanity-check timing before committing to a real run |
 
 This is the same script, run the same way, that produced the dev machine's
@@ -229,15 +230,15 @@ cluster IDs).
 Quick summary of what changes for SaaS vs the local steps above:
 
 - **Skip step 1** (no `docker compose up` — the cluster is in Console).
-- **Step 3** (`deploy.sh`): export `BASE_URL`, `TOKEN_URL`,
-  `ORCHESTRATION_CLIENT_ID`, `ORCHESTRATION_CLIENT_SECRET`,
-  `DEFAULT_TENANT_ID` first.
+- **Step 3** (`deploy.sh`): export `ZEEBE_REST_ADDRESS`, `CAMUNDA_OAUTH_URL`,
+  `CAMUNDA_CLIENT_ID`, `CAMUNDA_CLIENT_SECRET`, `DEFAULT_TENANT_ID` first.
 - **Step 4** (workers): Java needs `CAMUNDA_CLIENT_MODE=saas` +
-  `CAMUNDA_CLIENT_CLOUD_CLUSTER_ID` + `CAMUNDA_CLIENT_CLOUD_REGION`; Python needs
+  `CAMUNDA_CLIENT_CLOUD_CLUSTERID` + `CAMUNDA_CLIENT_CLOUD_REGION`; Python needs
   `ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443` and
   **no** `OAUTHLIB_INSECURE_TRANSPORT`.
-- **Seed driver**: same `--base-url` / `--token-url` / `--client-id` /
-  `--client-secret` overrides as shown above, but pointed at SaaS.
+- **Seed driver**: picks up `ZEEBE_REST_ADDRESS` / `CAMUNDA_OAUTH_URL` /
+  `CAMUNDA_CLIENT_ID` / `CAMUNDA_CLIENT_SECRET` from env automatically —
+  no CLI flags needed once the exports above are set.
 - **Clock control does not work on SaaS** — `PUT /v2/clock` is a
   self-managed-only API, so the seed driver's simulated-past pinning will
   fail against SaaS. Forward-only / live demos work; the backdated

@@ -17,22 +17,27 @@ set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODELS_DIR="$HERE/models"
 
-BASE_URL="${BASE_URL:-http://localhost:8088}"
-TOKEN_URL="${TOKEN_URL:-http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}"
-CLIENT_ID="${ORCHESTRATION_CLIENT_ID:-orchestration}"
-CLIENT_SECRET="${ORCHESTRATION_CLIENT_SECRET:-secret}"
+BASE_URL="${ZEEBE_REST_ADDRESS:-http://localhost:8088}"
+TOKEN_URL="${CAMUNDA_OAUTH_URL:-http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}"
+CLIENT_ID="${CAMUNDA_CLIENT_ID:-orchestration}"
+CLIENT_SECRET="${CAMUNDA_CLIENT_SECRET:-secret}"
+AUDIENCE="${CAMUNDA_TOKEN_AUDIENCE:-orchestration-api}"
 
 log() { echo "[deploy] $*" >&2; }
 
 fetch_token() {
+  # Camunda SaaS OAuth requires an `audience` parameter (the Zeebe audience
+  # from Console); local Keycloak ignores it. Sending it unconditionally
+  # works for both targets.
   curl -fsS -X POST "$TOKEN_URL" \
     -d "grant_type=client_credentials" \
     -d "client_id=$CLIENT_ID" \
     -d "client_secret=$CLIENT_SECRET" \
+    -d "audience=$AUDIENCE" \
     | python3 -c "import json,sys; print(json.load(sys.stdin)['access_token'])"
 }
 
-log "fetching OIDC token from Keycloak..."
+log "fetching OIDC token from $TOKEN_URL..."
 TOKEN="$(fetch_token)"
 log "token acquired"
 
@@ -65,9 +70,13 @@ echo "$DEPLOY_RESULT" | python3 -c "
 import json,sys
 d=json.load(sys.stdin)
 for dep in d.get('deployments', []):
+    if not dep:
+        continue
     for kind in ('processDefinition', 'decisionDefinition', 'decisionRequirements', 'form'):
         if kind in dep:
             r = dep[kind]
+            if not r:
+                continue
             ident = r.get('processDefinitionId') or r.get('dmnDecisionId') or r.get('formId') or '?'
             print(f\"  {kind}: {ident} v{r.get('version','?')}\")
 "
@@ -117,8 +126,8 @@ deploy_subset_to_tenant() {
     args+=(-F "resources=@$MODELS_DIR/$name.bpmn;filename=$name.bpmn")
   done
   # tenantId is a multipart form field per the v2 deployments schema, not a
-  # query parameter.
-  auth_curl -X POST "$BASE_URL/v2/deployments" -F "tenantId=$tenant_id" "${args[@]}" >/dev/null
+  # query parameter. Use --form-string for consistency with DEFAULT_TENANT_ARGS.
+  auth_curl -X POST "$BASE_URL/v2/deployments" --form-string "tenantId=$tenant_id" "${args[@]}"
 }
 deploy_subset_to_tenant "retail"
 deploy_subset_to_tenant "private-bank"

@@ -16,11 +16,11 @@ GOOS="$(go env GOOS)"
 GOARCH="$(go env GOARCH)"
 BINARY="$HERE/scripts/assessment-tool-${GOOS}-${GOARCH}"
 
-BASE_URL="${BASE_URL:-http://localhost:8088/v2}"
-OIDC_TOKEN_URL="${OIDC_TOKEN_URL:-http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}"
-OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-orchestration}"
-OIDC_AUDIENCE="${OIDC_AUDIENCE:-orchestration-api}"
-export CAMUNDA_OIDC_CLIENT_SECRET="${CAMUNDA_OIDC_CLIENT_SECRET:-secret}"
+BASE_URL="${ZEEBE_REST_ADDRESS:-http://localhost:8088}"
+TOKEN_URL="${CAMUNDA_OAUTH_URL:-http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}"
+CLIENT_ID="${CAMUNDA_CLIENT_ID:-orchestration}"
+AUDIENCE="${CAMUNDA_TOKEN_AUDIENCE:-orchestration-api}"
+export CAMUNDA_CLIENT_SECRET="${CAMUNDA_CLIENT_SECRET:-secret}"
 
 REPORT_PATH="$HERE/expected/actual-assessment-report.json"
 
@@ -33,11 +33,11 @@ fi
 
 log "running assess against $BASE_URL (this walks the whole estate -- may take a few minutes)..."
 "$BINARY" assess \
-  --base-url "$BASE_URL" \
+  --base-url "$BASE_URL/v2" \
   --auth-mode oidc \
-  --oidc-token-url "$OIDC_TOKEN_URL" \
-  --oidc-client-id "$OIDC_CLIENT_ID" \
-  --oidc-audience "$OIDC_AUDIENCE" \
+  --oidc-token-url "$TOKEN_URL" \
+  --oidc-client-id "$CLIENT_ID" \
+  --oidc-audience "$AUDIENCE" \
   --output "$REPORT_PATH"
 
 log "assess complete, report at $REPORT_PATH"

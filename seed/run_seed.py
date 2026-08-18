@@ -29,6 +29,7 @@ Safe to interrupt (Ctrl-C) -- resets the clock to real time in a finally
 block regardless of how far the loop got.
 """
 import argparse
+import os
 import random
 import sys
 import time
@@ -73,10 +74,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--days", type=int, default=45, help="how many simulated days of history to produce")
     p.add_argument("--scale", type=float, default=1.0, help="multiplier on traffic_profile.py's daily rates")
     p.add_argument("--seed", type=int, default=42, help="RNG seed -- fixes the shape of the run, not exact keys")
-    p.add_argument("--base-url", default="http://localhost:8088")
-    p.add_argument("--token-url", default="http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token")
-    p.add_argument("--client-id", default="orchestration")
-    p.add_argument("--client-secret", default="secret")
+    p.add_argument("--base-url", default=os.environ.get("ZEEBE_REST_ADDRESS", "http://localhost:8088"))
+    p.add_argument("--token-url", default=os.environ.get("CAMUNDA_OAUTH_URL", "http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token"))
+    p.add_argument("--client-id", default=os.environ.get("CAMUNDA_CLIENT_ID", "orchestration"))
+    p.add_argument("--client-secret", default=os.environ.get("CAMUNDA_CLIENT_SECRET", "secret"))
+    p.add_argument("--audience", default=os.environ.get("CAMUNDA_TOKEN_AUDIENCE"))
     p.add_argument("--dry-run", action="store_true", help="print the plan without calling the cluster")
     return p.parse_args()
 
@@ -244,7 +246,8 @@ def main() -> None:
     args = parse_args()
     rng = random.Random(args.seed)
 
-    client = ApiClient(args.base_url, args.token_url, args.client_id, args.client_secret)
+    client = ApiClient(args.base_url, args.token_url, args.client_id, args.client_secret,
+                       audience=args.audience)
     clock = ClockController(args.base_url, client.token)
 
     pending_documents: list = []

@@ -106,16 +106,17 @@ set of exports — no code changes, no separate branch.
 ### Environment exports
 
 ```bash
-export CAMUNDA_CLIENT_CLOUD_CLUSTER_ID=<from Console>
+export CAMUNDA_CLIENT_MODE=saas
+export CAMUNDA_CLIENT_CLOUD_CLUSTERID=<from Console>
 export CAMUNDA_CLIENT_CLOUD_REGION=<e.g. bru-2>
 export CAMUNDA_CLIENT_ID=<api client id>
 export CAMUNDA_CLIENT_SECRET=<api client secret>
 export CAMUNDA_TOKEN_AUDIENCE=<zeebe audience from Console>
+export CAMUNDA_OAUTH_URL=https://login.cloud.camunda.io/oauth/token
 export DEFAULT_TENANT_ID=<Console-assigned default tenant ID>
 # REST base URL for deploy.sh + seed driver -- copy from Console's API tab:
-export BASE_URL=https://<region>.zeebe.camunda.io/<cluster-id>        # Gen1
-# or: https://api.<region>.zeebe.camunda.io/<cluster-id>             # Gen2
-export TOKEN_URL=https://login.cloud.camunda.io/oauth/token
+export ZEEBE_REST_ADDRESS=https://<region>.zeebe.camunda.io/<cluster-id>    # Gen1
+# or: https://api.<region>.zeebe.camunda.io/<cluster-id>                   # Gen2
 # gRPC address for the Python workers (TLS host, not localhost):
 export ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443
 ```
@@ -129,16 +130,16 @@ bash scripts/deploy.sh
 # 2. Java workers -- saas mode tells spring-zeebe to derive endpoints
 #    from cloud.cluster-id + cloud.region (the *_ADDRESS / token-url
 #    defaults in application.yaml are ignored in saas mode)
-cd workers-java && CAMUNDA_CLIENT_MODE=saas mvn spring-boot:run
+cd workers-java && mvn spring-boot:run
 
 # 3. Python workers -- no OAUTHLIB_INSECURE_TRANSPORT (that's local-only);
 #    worker_setup.py auto-detects TLS from ZEEBE_GRPC_ADDRESS
 cd workers-python && .venv/bin/python -m northwind_workers.main
 
-# 4. Seed driver
-.venv/bin/python seed/run_seed.py --days 45 --seed 42 \
-  --base-url "$BASE_URL" --token-url "$TOKEN_URL" \
-  --client-id "$CAMUNDA_CLIENT_ID" --client-secret "$CAMUNDA_CLIENT_SECRET"
+# 4. Seed driver (picks up ZEEBE_REST_ADDRESS / CAMUNDA_OAUTH_URL /
+#    CAMUNDA_CLIENT_ID / CAMUNDA_CLIENT_SECRET from env automatically;
+#    CLI flags still override if you need to differ)
+.venv/bin/python seed/run_seed.py --days 45 --seed 42
 
 # 5. Assessment tool
 bash scripts/verify.sh
