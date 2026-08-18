@@ -36,8 +36,9 @@ cd cluster && docker compose -f docker-compose-full.yaml up -d
 cd .. && for s in scripts/gen_*.py; do python3 "$s"; done
 cd scripts/bpmn-auto-layout && npm install && node layout.mjs && cd ../..
 
-# 3. Deploy the estate
-bash scripts/deploy.sh
+# 3. Deploy the estate (MULTI_TENANCY=true for the local cluster's
+#    multi-tenant setup; defaults to false for SaaS compatibility)
+MULTI_TENANCY=true bash scripts/deploy.sh
 
 # 4. Start the workers (separate terminals)
 cd workers-java && mvn spring-boot:run
@@ -76,12 +77,19 @@ before bringing the stack up (this machine has 18GB; raised to 10GB/6 CPUs).
 
 ## Multi-tenancy
 
-On by default (`.env`: `CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true`).
-Every deploy/create-instance call needs an explicit `tenantId` — the
-default tenant's literal ID is the string `<default>` (with angle brackets).
-`scripts/deploy.sh` handles this; if calling the API directly with `curl -F`,
+On by default in the local docker-compose cluster (`.env`:
+`CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true`). Every deploy/create-instance
+call needs an explicit `tenantId` — the default tenant's literal ID is the
+string `<default>` (with angle brackets). `scripts/deploy.sh` handles this
+when `MULTI_TENANCY=true`; if calling the API directly with `curl -F`,
 use `--form-string "tenantId=<default>"`, not `-F` (curl's `-F` treats a
 leading `<` as "read this field's value from a file").
+
+`deploy.sh` defaults to `MULTI_TENANCY=false` (single-tenant, for SaaS
+compatibility). Set `MULTI_TENANCY=true` for the local cluster to create
+the `retail` / `private-bank` tenants and deploy the tenant-scoped subset.
+See "Deploying to Camunda SaaS" below for the full multi-tenancy toggle
+details.
 
 ## Deploying to Camunda SaaS
 
@@ -93,38 +101,44 @@ set of exports — no code changes, no separate branch.
 ### Prerequisites in Camunda Console
 
 1. **Create a cluster** (8.8.x to match `workers-java/pom.xml`'s
-   `version.camunda`). Multi-tenancy is on by design in this estate, so
-   create a **multi-tenant** cluster — it's a creation-time setting and
-   can't be flipped later.
-2. **Create an API client** (Console → cluster → API tab) with Deployment +
-   Read + Write permissions on Zeebe. Note the **Client ID**, **Client
+   `version.camunda`). Multi-tenancy is optional — the estate deploys to
+   the default tenant by default. If you want the `retail` / `private-bank`
+   tenant-scoped subset, create a **multi-tenant** cluster (creation-time
+   setting, can't be flipped later) and set `MULTI_TENANCY=true` when
+   deploying.
+2. **Create an API client** (Console → cluster → API tab) with **Orchestration**
+   scope (covers Zeebe REST + gRPC). Note the **Client ID**, **Client
    Secret**, and the **Zeebe audience** Console shows (region-scoped).
-3. Note the **Cluster ID**, **Region** (e.g. `bru-2`), and the **REST base
-   URL** and **gRPC address** from Console's API tab (Gen1 vs Gen2 clusters
-   have different URL shapes — copy them from Console rather than guessing).
+3. Note the **Cluster ID**, **Region** (e.g. `sin-2`), and the **REST base
+   URL** and **gRPC address** from Console's API tab — copy them from
+   Console rather than guessing. Gen2 clusters use `api.camunda.io`,
+   older ones use `zeebe.camunda.io`.
 
 ### Environment exports
 
 ```bash
 export CAMUNDA_CLIENT_MODE=saas
 export CAMUNDA_CLIENT_CLOUD_CLUSTERID=<from Console>
-export CAMUNDA_CLIENT_CLOUD_REGION=<e.g. bru-2>
+export CAMUNDA_CLIENT_CLOUD_REGION=<e.g. sin-2>
 export CAMUNDA_CLIENT_ID=<api client id>
 export CAMUNDA_CLIENT_SECRET=<api client secret>
-export CAMUNDA_TOKEN_AUDIENCE=<zeebe audience from Console>
+export CAMUNDA_TOKEN_AUDIENCE=<zeebe audience from Console, e.g. zeebe.camunda.io>
 export CAMUNDA_OAUTH_URL=https://login.cloud.camunda.io/oauth/token
-export DEFAULT_TENANT_ID=<Console-assigned default tenant ID>
 # REST base URL for deploy.sh + seed driver -- copy from Console's API tab:
-export ZEEBE_REST_ADDRESS=https://<region>.zeebe.camunda.io/<cluster-id>    # Gen1
-# or: https://api.<region>.zeebe.camunda.io/<cluster-id>                   # Gen2
+export ZEEBE_REST_ADDRESS=https://<region>.api.camunda.io/<cluster-id>      # Gen2
+# or: https://<region>.zeebe.camunda.io/<cluster-id>                       # Gen1
 # gRPC address for the Python workers (TLS host, not localhost):
 export ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443
+# Multi-tenancy: false (default) deploys to the default tenant only.
+# Set to true ONLY if your cluster was created as multi-tenant.
+export MULTI_TENANCY=false
 ```
 
 ### Deploy + run workers + seed
 
 ```bash
-# 1. Deploy the estate (idempotent)
+# 1. Deploy the estate (idempotent). MULTI_TENANCY defaults to false
+#    (single-tenant); set MULTI_TENANCY=true for a multi-tenant cluster.
 bash scripts/deploy.sh
 
 # 2. Java workers -- saas mode tells spring-zeebe to derive endpoints
@@ -144,6 +158,21 @@ cd workers-python && .venv/bin/python -m northwind_workers.main
 # 5. Assessment tool
 bash scripts/verify.sh
 ```
+
+### Multi-tenancy
+
+`deploy.sh` defaults to `MULTI_TENANCY=false` — it deploys the base estate
+(16 BPMN + 3 DMN + 5 forms) and fx-settlement v2/v3 to the default tenant
+only, and skips tenant creation + tenant-scoped deploys entirely. This
+works on any cluster (SaaS or self-managed, single- or multi-tenant).
+
+For the full estate design (D6 — `retail` / `private-bank` tenants with a
+tenant-scoped subset deployed into each), set `MULTI_TENANCY=true`. This
+requires a **multi-tenant cluster** — on SaaS, multi-tenancy is a
+creation-time setting that can't be enabled later. On the local
+docker-compose cluster, it's controlled by
+`CAMUNDA_SECURITY_MULTITENANCY_CHECKSENABLED=true` in `cluster/.env`
+(enabled by default).
 
 ### What does NOT work on SaaS
 
@@ -168,6 +197,6 @@ historical-window scan.
 | Python worker TLS | plaintext (`grpc.local_channel_credentials`) | TLS (auto-detected from address) |
 | `OAUTHLIB_INSECURE_TRANSPORT` | `1` (required) | unset |
 | Token URL | Keycloak `localhost:18080` | `login.cloud.camunda.io/oauth/token` |
-| Default tenant ID | `<default>` (literal) | Console-assigned (override `DEFAULT_TENANT_ID`) |
+| Multi-tenancy | `MULTI_TENANCY=true` (default in `cluster/.env`) | `MULTI_TENANCY=false` (default) |
 | Clock control | works (`PUT /v2/clock`) | **disabled** — seed driver can't pin |
 

@@ -86,7 +86,9 @@ cd ../..
 
 ```bash
 # 3. Deploy the estate (idempotent -- safe to re-run)
-bash scripts/deploy.sh
+#    MULTI_TENANCY=true for the local cluster's multi-tenant setup
+#    (deploy.sh defaults to false for SaaS compatibility)
+MULTI_TENANCY=true bash scripts/deploy.sh
 ```
 
 ```bash
@@ -224,21 +226,22 @@ also targets Camunda SaaS with no code changes — every script, worker, and
 the seed driver read cluster endpoints and credentials from environment
 variables with local-cluster defaults. See the root [README.md](../README.md)'s
 "Deploying to Camunda SaaS" section for the full env-var list and the
-prerequisites in Camunda Console (multi-tenant cluster, API client, region/
-cluster IDs).
+prerequisites in Camunda Console (API client, region/cluster IDs).
 
 Quick summary of what changes for SaaS vs the local steps above:
 
 - **Skip step 1** (no `docker compose up` — the cluster is in Console).
 - **Step 3** (`deploy.sh`): export `ZEEBE_REST_ADDRESS`, `CAMUNDA_OAUTH_URL`,
-  `CAMUNDA_CLIENT_ID`, `CAMUNDA_CLIENT_SECRET`, `DEFAULT_TENANT_ID` first.
+  `CAMUNDA_CLIENT_ID`, `CAMUNDA_CLIENT_SECRET`, `CAMUNDA_TOKEN_AUDIENCE`
+  first. `MULTI_TENANCY` defaults to `false` (single-tenant) — set to
+  `true` only if your cluster was created as multi-tenant.
 - **Step 4** (workers): Java needs `CAMUNDA_CLIENT_MODE=saas` +
   `CAMUNDA_CLIENT_CLOUD_CLUSTERID` + `CAMUNDA_CLIENT_CLOUD_REGION`; Python needs
   `ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443` and
   **no** `OAUTHLIB_INSECURE_TRANSPORT`.
 - **Seed driver**: picks up `ZEEBE_REST_ADDRESS` / `CAMUNDA_OAUTH_URL` /
-  `CAMUNDA_CLIENT_ID` / `CAMUNDA_CLIENT_SECRET` from env automatically —
-  no CLI flags needed once the exports above are set.
+  `CAMUNDA_CLIENT_ID` / `CAMUNDA_CLIENT_SECRET` / `CAMUNDA_TOKEN_AUDIENCE`
+  from env automatically — no CLI flags needed once the exports above are set.
 - **Clock control does not work on SaaS** — `PUT /v2/clock` is a
   self-managed-only API, so the seed driver's simulated-past pinning will
   fail against SaaS. Forward-only / live demos work; the backdated
