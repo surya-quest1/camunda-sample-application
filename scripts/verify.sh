@@ -19,6 +19,7 @@ BINARY="$HERE/scripts/assessment-tool-${GOOS}-${GOARCH}"
 BASE_URL="${BASE_URL:-http://localhost:8088/v2}"
 OIDC_TOKEN_URL="${OIDC_TOKEN_URL:-http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token}"
 OIDC_CLIENT_ID="${OIDC_CLIENT_ID:-orchestration}"
+OIDC_AUDIENCE="${OIDC_AUDIENCE:-orchestration-api}"
 export CAMUNDA_OIDC_CLIENT_SECRET="${CAMUNDA_OIDC_CLIENT_SECRET:-secret}"
 
 REPORT_PATH="$HERE/expected/actual-assessment-report.json"
@@ -36,7 +37,7 @@ log "running assess against $BASE_URL (this walks the whole estate -- may take a
   --auth-mode oidc \
   --oidc-token-url "$OIDC_TOKEN_URL" \
   --oidc-client-id "$OIDC_CLIENT_ID" \
-  --oidc-audience orchestration-api \
+  --oidc-audience "$OIDC_AUDIENCE" \
   --output "$REPORT_PATH"
 
 log "assess complete, report at $REPORT_PATH"

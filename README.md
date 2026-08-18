@@ -83,3 +83,90 @@ default tenant's literal ID is the string `<default>` (with angle brackets).
 use `--form-string "tenantId=<default>"`, not `-F` (curl's `-F` treats a
 leading `<` as "read this field's value from a file").
 
+## Deploying to Camunda SaaS
+
+The estate is dual-target: every script, worker, and the seed driver read
+their cluster endpoints and credentials from environment variables with
+local-cluster defaults, so pointing the same code at Camunda SaaS is just a
+set of exports — no code changes, no separate branch.
+
+### Prerequisites in Camunda Console
+
+1. **Create a cluster** (8.8.x to match `workers-java/pom.xml`'s
+   `version.camunda`). Multi-tenancy is on by design in this estate, so
+   create a **multi-tenant** cluster — it's a creation-time setting and
+   can't be flipped later.
+2. **Create an API client** (Console → cluster → API tab) with Deployment +
+   Read + Write permissions on Zeebe. Note the **Client ID**, **Client
+   Secret**, and the **Zeebe audience** Console shows (region-scoped).
+3. Note the **Cluster ID**, **Region** (e.g. `bru-2`), and the **REST base
+   URL** and **gRPC address** from Console's API tab (Gen1 vs Gen2 clusters
+   have different URL shapes — copy them from Console rather than guessing).
+
+### Environment exports
+
+```bash
+export CAMUNDA_CLIENT_CLOUD_CLUSTER_ID=<from Console>
+export CAMUNDA_CLIENT_CLOUD_REGION=<e.g. bru-2>
+export CAMUNDA_CLIENT_ID=<api client id>
+export CAMUNDA_CLIENT_SECRET=<api client secret>
+export CAMUNDA_TOKEN_AUDIENCE=<zeebe audience from Console>
+export DEFAULT_TENANT_ID=<Console-assigned default tenant ID>
+# REST base URL for deploy.sh + seed driver -- copy from Console's API tab:
+export BASE_URL=https://<region>.zeebe.camunda.io/<cluster-id>        # Gen1
+# or: https://api.<region>.zeebe.camunda.io/<cluster-id>             # Gen2
+export TOKEN_URL=https://login.cloud.camunda.io/oauth/token
+# gRPC address for the Python workers (TLS host, not localhost):
+export ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443
+```
+
+### Deploy + run workers + seed
+
+```bash
+# 1. Deploy the estate (idempotent)
+bash scripts/deploy.sh
+
+# 2. Java workers -- saas mode tells spring-zeebe to derive endpoints
+#    from cloud.cluster-id + cloud.region (the *_ADDRESS / token-url
+#    defaults in application.yaml are ignored in saas mode)
+cd workers-java && CAMUNDA_CLIENT_MODE=saas mvn spring-boot:run
+
+# 3. Python workers -- no OAUTHLIB_INSECURE_TRANSPORT (that's local-only);
+#    worker_setup.py auto-detects TLS from ZEEBE_GRPC_ADDRESS
+cd workers-python && .venv/bin/python -m northwind_workers.main
+
+# 4. Seed driver
+.venv/bin/python seed/run_seed.py --days 45 --seed 42 \
+  --base-url "$BASE_URL" --token-url "$TOKEN_URL" \
+  --client-id "$CAMUNDA_CLIENT_ID" --client-secret "$CAMUNDA_CLIENT_SECRET"
+
+# 5. Assessment tool
+bash scripts/verify.sh
+```
+
+### What does NOT work on SaaS
+
+**Clock control (`seed/clock.py`) is a self-managed-only API.** The
+`PUT /v2/clock` endpoint that pins the broker's engine clock is disabled on
+Camunda SaaS, so the seed driver's simulated-past design (45 days of
+backdated, pinned-clock history) will not work against SaaS regardless of
+configuration. `run_seed.py` will run but every `clock.pin*` call will fail
+and instances get real-time timestamps instead of backdated ones.
+
+If backdated history is the point of this estate (and the README's
+"reproducible 45-day simulated-time seeding" framing suggests it is),
+self-managed is the correct target. SaaS works for live/forward-only
+demos and worker validation, but not for the assessment tool's
+historical-window scan.
+
+### What's different from local, at a glance
+
+| Thing | Local | SaaS |
+|---|---|---|
+| Java worker mode | `self-managed` (default) | `CAMUNDA_CLIENT_MODE=saas` |
+| Python worker TLS | plaintext (`grpc.local_channel_credentials`) | TLS (auto-detected from address) |
+| `OAUTHLIB_INSECURE_TRANSPORT` | `1` (required) | unset |
+| Token URL | Keycloak `localhost:18080` | `login.cloud.camunda.io/oauth/token` |
+| Default tenant ID | `<default>` (literal) | Console-assigned (override `DEFAULT_TENANT_ID`) |
+| Clock control | works (`PUT /v2/clock`) | **disabled** — seed driver can't pin |
+

@@ -1,6 +1,13 @@
 camunda:
   client:
-    mode: self-managed
+    # self-managed (local docker-compose) | saas (Camunda SaaS).
+    # In saas mode the starter derives grpc/rest/token endpoints from
+    # cloud.cluster-id + cloud.region and ignores the *_ADDRESS / token-url
+    # defaults below. See https://docs.camunda.io/docs/apis-tools/camunda-spring-boot-starter/properties-reference/
+    mode: ${CAMUNDA_CLIENT_MODE:self-managed}
+    cloud:
+      cluster-id: ${CAMUNDA_CLIENT_CLOUD_CLUSTER_ID:}
+      region: ${CAMUNDA_CLIENT_CLOUD_REGION:}
     grpc-address: ${ZEEBE_GRPC_ADDRESS:http://localhost:26500}
     rest-address: ${ZEEBE_REST_ADDRESS:http://localhost:8088}
     auth:

@@ -41,10 +41,13 @@ auth_curl() {
 }
 
 # Multi-tenancy is on (D6), so every deployment call needs a tenantId form
-# field. <default> is the literal tenant ID Camunda seeds automatically --
-# use --form-string (not -F) so curl doesn't interpret the leading '<' as
-# "read this field's value from a file".
-DEFAULT_TENANT_ARGS=(--form-string "tenantId=<default>")
+# field. <default> is the literal tenant ID a self-managed cluster seeds
+# automatically; on SaaS multi-tenant the default tenant ID is assigned by
+# Console and varies -- override via DEFAULT_TENANT_ID. Use --form-string
+# (not -F) so curl doesn't interpret a leading '<' as "read this field's
+# value from a file".
+DEFAULT_TENANT_ID="${DEFAULT_TENANT_ID:-<default>}"
+DEFAULT_TENANT_ARGS=(--form-string "tenantId=$DEFAULT_TENANT_ID")
 
 # --- 1. Base estate: 16 BPMN + 3 DMN + 5 forms, one atomic deployment -------
 log "deploying base estate (16 BPMN + 3 DMN + 5 forms)..."

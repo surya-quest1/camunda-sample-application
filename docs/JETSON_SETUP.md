@@ -154,7 +154,10 @@ if you just want to confirm the schedule.
 
 `seed/reseed_fixes.py` is a lighter, faster **partial** reseed (7 days,
 `seed=43`, 3 specific processes) — only useful if you're validating a
-one-off process fix, not for the primary full-history run.
+one-off process fix, not for the primary full-history run. It takes the
+same `--base-url` / `--token-url` / `--client-id` / `--client-secret`
+flags as `run_seed.py` (same defaults), so pointing it at a non-local
+cluster is the same override pattern.
 
 After a large seed completes, **wait ~60–120 seconds before running the
 assessment tool** — Elasticsearch's search index lags behind the raw event
@@ -188,12 +191,14 @@ building natively on the Jetson, not cross-compiling from macOS).
 
 - **`OAUTHLIB_INSECURE_TRANSPORT=1`** is required for the Python workers
   against this non-TLS local cluster, on any host — not Jetson-specific,
-  just easy to forget on a fresh setup.
-- **`--form-string`, not `-F`**, for any direct `curl` deployment call — the
-  default tenant's literal ID is the string `<default>` (with angle
-  brackets); `curl -F` misreads the leading `<` as "read this field from a
-  file". `scripts/deploy.sh` already handles this; only matters if you're
-  crafting your own calls.
+  just easy to forget on a fresh setup. **Do not set it for SaaS** — SaaS
+  uses TLS and the Python worker auto-detects from `ZEEBE_GRPC_ADDRESS`.
+- **`--form-string`, not `-F`**, for any direct `curl` deployment call —
+  the default tenant's literal ID is the string `<default>` (with angle
+  brackets) on self-managed; `curl -F` misreads the leading `<` as "read
+  this field from a file". `scripts/deploy.sh` already handles this via
+  `DEFAULT_TENANT_ID` (env-overridable, defaults to `<default>`); only
+  matters if you're crafting your own calls.
 - No Jetson-specific container images are needed anywhere in this stack —
   every image in `cluster/docker-compose-full.yaml` (Camunda, Elasticsearch,
   Keycloak, Postgres, Mailpit) publishes official `linux/arm64` manifests,
@@ -210,3 +215,31 @@ multi-pool BPMN files) have been applied directly to `shinro`'s
 `tools/camunda/assessment-tool`. Any `shinro` checkout pulled after that
 change already has them — `scripts/verify.sh` on a fresh Jetson clone will
 build the fixed binary with no extra steps.
+
+## Camunda SaaS instead of self-managed
+
+Everything above assumes the local docker-compose cluster. The same repo
+also targets Camunda SaaS with no code changes — every script, worker, and
+the seed driver read cluster endpoints and credentials from environment
+variables with local-cluster defaults. See the root [README.md](../README.md)'s
+"Deploying to Camunda SaaS" section for the full env-var list and the
+prerequisites in Camunda Console (multi-tenant cluster, API client, region/
+cluster IDs).
+
+Quick summary of what changes for SaaS vs the local steps above:
+
+- **Skip step 1** (no `docker compose up` — the cluster is in Console).
+- **Step 3** (`deploy.sh`): export `BASE_URL`, `TOKEN_URL`,
+  `ORCHESTRATION_CLIENT_ID`, `ORCHESTRATION_CLIENT_SECRET`,
+  `DEFAULT_TENANT_ID` first.
+- **Step 4** (workers): Java needs `CAMUNDA_CLIENT_MODE=saas` +
+  `CAMUNDA_CLIENT_CLOUD_CLUSTER_ID` + `CAMUNDA_CLIENT_CLOUD_REGION`; Python needs
+  `ZEEBE_GRPC_ADDRESS=<cluster-id>.<region>.zeebe.camunda.io:443` and
+  **no** `OAUTHLIB_INSECURE_TRANSPORT`.
+- **Seed driver**: same `--base-url` / `--token-url` / `--client-id` /
+  `--client-secret` overrides as shown above, but pointed at SaaS.
+- **Clock control does not work on SaaS** — `PUT /v2/clock` is a
+  self-managed-only API, so the seed driver's simulated-past pinning will
+  fail against SaaS. Forward-only / live demos work; the backdated
+  45-day history that the assessment tool is designed to scan does not.
+  If the historical window is the point, stay self-managed.

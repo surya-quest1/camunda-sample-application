@@ -21,13 +21,23 @@ from pyzeebe.channel.oauth_channel import create_oauth2_client_credentials_chann
 
 def _build_channel():
     mode = os.environ.get("CAMUNDA_CLIENT_MODE", "oidc")
+    # The Java worker's camunda.client.mode uses saas/self-managed (deployment
+    # mode); this worker uses oidc/basic/none (auth mode). Both deployment
+    # targets use OIDC auth in this estate, so map the Java values to oidc
+    # here -- avoids a ValueError if CAMUNDA_CLIENT_MODE=saas leaks into the
+    # Python worker's environment.
+    if mode in ("saas", "self-managed"):
+        mode = "oidc"
     grpc_address = os.environ.get("ZEEBE_GRPC_ADDRESS", "localhost:26500")
 
     if mode == "none":
         return create_insecure_channel(grpc_address=grpc_address)
 
     if mode == "oidc":
-        return create_oauth2_client_credentials_channel(
+        # Local cluster gRPC gateway is plaintext (no TLS); SaaS is TLS.
+        # Auto-detect from the address so the same code path serves both
+        # targets without an extra env var.
+        kwargs = dict(
             grpc_address=grpc_address,
             client_id=os.environ.get("CAMUNDA_CLIENT_ID", "orchestration"),
             client_secret=os.environ.get("CAMUNDA_CLIENT_SECRET", "secret"),
@@ -36,10 +46,11 @@ def _build_channel():
                 "http://localhost:18080/auth/realms/camunda-platform/protocol/openid-connect/token",
             ),
             audience=os.environ.get("CAMUNDA_TOKEN_AUDIENCE", "orchestration-api"),
-            # Local cluster gRPC gateway is plaintext (no TLS) -- override the
-            # oauth channel's default SSL channel credentials.
-            channel_credentials=grpc.local_channel_credentials(),
         )
+        if grpc_address.startswith(("localhost", "127.")):
+            # Override the oauth channel's default SSL channel credentials.
+            kwargs["channel_credentials"] = grpc.local_channel_credentials()
+        return create_oauth2_client_credentials_channel(**kwargs)
 
     raise ValueError(f"unsupported CAMUNDA_CLIENT_MODE: {mode!r}")
 
