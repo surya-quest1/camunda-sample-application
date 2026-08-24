@@ -19,6 +19,6 @@ public class CreditBureauService {
 
   public boolean postToCoreBanking(String applicationId, double requestedAmount) {
     LOG.info("Posting credit assessment to core banking for {}", applicationId);
-    return coreBankingClient.postLedgerAdjustment(applicationId, requestedAmount);
+  return coreBankingClient.postLedgerAdjustment(applicationId, requestedAmount);
   }
 }

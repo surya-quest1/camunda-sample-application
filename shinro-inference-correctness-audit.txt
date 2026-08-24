@@ -1,0 +1,170 @@
+Shinro Migration Assessment — sideEffectClass Inference Correctness Audit
+Repo: camunda-sample-application
+Compared: assessment-report (25).pdf  vs.  code-analysis.json (schemaVersion 1.4.0)
+          vs. actual worker/service source (workers-java, workers-python)
+Noted: 2026-08-24
+
+Question: is the "inference" section (sideEffectClass, confidence, rationale) that
+the code-analyzer produces for each of the 34 workers actually correct?
+
+Verdict: no. The rule-based classifier is wrong on roughly a third of the workers
+it is most confident about, and the LLM-based idempotency-key inference has
+essentially no code support for several of its highest-stakes claims.
+
+------------------------------------------------------------------------------
+1. Confirmed misclassifications — rule path, confidence 0.85, all claimed "read-only"
+------------------------------------------------------------------------------
+Method: read the actual worker method + the service/repository method it calls,
+not just the callGraph field the analyzer recorded.
+
+  Job type                        Claimed    Actual   Evidence
+  -------------------------------------------------------------------------------
+  build-regulatory-dataset        read-only  WRITES   RegulatoryReportingService
+                                                       .buildDataset ->
+                                                       httpGateway.postJson(".../v1/datasets", ...)
+                                                       (workers-java/.../services/RegulatoryReportingService.java:20-25)
+
+  lock-fx-rate                    read-only  WRITES   FxSettlementService.lockRate ->
+                                                       httpGateway.get(".../v1/lock/" + currencyPair)
+                                                       -- a GET verb used to perform a mutating "lock"
+                                                       (workers-java/.../services/FxSettlementService.java:23-27)
+
+  settle-fx-leg                   read-only  WRITES   FxSettlementService.settleLeg ->
+                                                       httpGateway.postJson(".../v1/settle", ...)
+                                                       (workers-java/.../services/FxSettlementService.java:29-34)
+
+  screen-sanctions-pep            read-only  WRITES   SanctionsService.screen ->
+                                                       httpGateway.postJson(".../v1/screen", ...)
+                                                       (workers-java/.../services/SanctionsService.java:23-26)
+
+  record-supplementary-evidence   read-only  WRITES   IdentityBureauService
+                                                       .recordSupplementaryEvidence ->
+                                                       httpGateway.postJson(".../v1/evidence", ...)
+                                                       (workers-java/.../services/IdentityBureauService.java:31-35)
+
+  release-fund-reservation        read-only  WRITES   DisbursementService.releaseReservation ->
+                                                       LedgerRepository.release ->
+                                                       reservations.remove(applicationId)
+                                                       -- a real mutation of the ledger stub; per that
+                                                       class's own Javadoc it is "standing in for a
+                                                       real ledger database," so in production this is
+                                                       a JDBC write
+                                                       (workers-java/.../clients/LedgerRepository.java:34-37)
+
+That is 6 of the 9 read-only-classified workers whose call graph delegates into
+a *Service/*Repository method. The other 3 (confirm-fx-settlement,
+reconcile-fx-ledger, legacy-fx-reconcile) are genuine no-ops and correctly
+classified -- confirmed by reading FxSettlementService.confirmSettlement (log
+only) and LedgerRepository.reconcile (log only, returns true, touches no state).
+
+Every read-only-classified worker whose call graph is ONLY Logger.info/Logger.warn
+(no delegate call) checked out correctly: classify-transactions-dmn and
+flag-product-book are confirmed stub/no-op code.
+
+Root cause: the rule's own stated rationale is "call graph fully resolved;
+reaches no known I/O sink (http/jdbc/kafka/file)" -- but it is not fully
+resolved. It stops at the first internal method call and pattern-matches the
+*symbol name* rather than tracing into the method body. The moment I/O sits
+one layer behind a *Service or *Repository class -- exactly the shape real
+codebases use -- the rule goes blind. This confirms (empirically, not just
+hypothetically) risk #1 from shinro-analyzer-generalizability-risks.txt: "the
+sink-keyword rule will silently misclassify a money-moving call as read-only
+the moment the I/O sits one abstraction layer deeper than this fixture's flat
+structure." Here it isn't even one layer deeper in most cases -- it's the very
+next call in the graph -- and the tool still misses it.
+
+------------------------------------------------------------------------------
+2. LLM idempotency-key claims with no code support
+------------------------------------------------------------------------------
+submit-payment-rail (idempotent-with-key, llm, confidence 0.75)
+  Claim: "applicationId serves as a natural deduplication key ... payment
+  rails typically deduplicate by application ID."
+  Actual: PaymentRailClient.submit sends applicationId as a plain JSON field
+  alongside amount/currencyPair -- no Idempotency-Key header, no dedup store
+  on either side of the call.
+  (workers-java/.../clients/PaymentRailClient.java:20-29)
+  Zero evidence for the claim. This is the highest-stakes example: it is a
+  money-movement call, and the "Suggested idempotency key: applicationId"
+  guidance in the PDF's worker detail card would tell an engineer this is
+  safe to retry when nothing in the code establishes that.
+
+notification_client.post_json (idempotent-with-key, llm, 0.75, shared by 8
+Python workers: notify-customer, notify-senior-analyst,
+notify-valuation-appointment, send-complaint-status-update,
+send-document-reminder, arrange-property-access, book-surveyor-slot,
+rescreen-sanctions-pep)
+  Actual: the only header sent is "Authorization: Bearer <token>". No
+  idempotency mechanism exists anywhere in this shared client.
+  (workers-python/northwind_workers/notification_client.py:29-42)
+  The same unsupported classification is copy-pasted across all 8 callers
+  purely because each happens to pass some kind of ID in its JSON payload.
+
+reserve-funds (idempotent-with-key, llm, 0.75) -- partially supported
+  LedgerRepository.reserve does key an in-memory ConcurrentHashMap by
+  applicationId, so retries against the *stub* are genuinely safe.
+  (workers-java/.../clients/LedgerRepository.java:24-32)
+  But this is simulated in-memory state, not a real idempotency mechanism
+  (no persistent store, no audit trail) -- the "confirmed" framing in the
+  PDF overstates what the code actually demonstrates.
+
+------------------------------------------------------------------------------
+3. Internal inconsistency: identical call, two different classifications
+------------------------------------------------------------------------------
+notify-ledger-posted        -> idempotent,          llm, confidence 0.65
+publish-ledger-posted-message -> idempotent-with-key, llm, confidence 0.75
+
+Both call the IDENTICAL DisbursementService.notifyLedgerPosted(applicationId)
+-- same method, same arguments, same single HTTP POST to
+".../v1/events/posted" -- from two call sites in the same file:
+  workers-java/.../workers/DisbursementWorkers.java:55 (notify-ledger-posted)
+  workers-java/.../workers/DisbursementWorkers.java:63 (publish-ledger-posted-message)
+
+There is no code difference to justify different classifications or
+different confidence scores. This looks like LLM variance driven by the
+job-type name ("notify" vs "publish") rather than the underlying call --
+concrete evidence for risk #2 in the generalizability-risks doc ("the
+LLM-inferred half reasons from variable names, not verified behavior").
+
+------------------------------------------------------------------------------
+4. Downstream effect on the Automation Readiness Score
+------------------------------------------------------------------------------
+PDF section 6, factor F3 "Job Type Risk" (6/15 penalty) counts only 1
+side-effecting worker (retry-alternate-rail) toward its penalty. With the
+corrected classifications above, that is at minimum 6 more workers that are
+actually side-effecting and are not being counted -- several of them in the
+payments/FX/sanctions domains, the highest-stakes part of a banking estate.
+The reported 48/100 automation-readiness score is very likely optimistic
+specifically where it matters most: money-movement and compliance-screening
+workers being told they are safe/read-only when they are not.
+
+------------------------------------------------------------------------------
+Summary table
+------------------------------------------------------------------------------
+Category                                          Count   Status
+Read-only, rule 0.85, delegate call verified       9       6 wrong / 3 correct
+Read-only, rule 0.85, Logger-only, verified        2       2 correct (of 16 unverified but same pattern)
+LLM idempotency-with-key claims spot-checked        3      1 no evidence, 1 no evidence (shared,
+                                                             8 callers), 1 partially supported
+Same-call, different-classification inconsistency  1 pair  confirmed, no code basis
+
+------------------------------------------------------------------------------
+Recommendation
+------------------------------------------------------------------------------
+1. Extend the rule-based classifier's call-graph resolution past the first
+   internal method hop, or -- if that is not feasible -- downgrade its
+   confidence and flag "shallow trace, unresolved" whenever the call graph
+   terminates at an internal *Service/*Repository method whose body was not
+   inspected, rather than asserting "read-only" at 0.85 confidence.
+2. Require actual code evidence (a header, a dedup table/store call, a
+   documented API contract) before the LLM path asserts "idempotent-with-key"
+   and names a specific suggested key. Otherwise emit "idempotent-with-key
+   (unverified)" or downgrade to "unknown -- verify with the integration
+   owner" rather than presenting a guess as engineering guidance.
+3. Fix the notify-ledger-posted / publish-ledger-posted-message inconsistency
+   as a concrete regression test case: identical call graphs must not
+   produce different sideEffectClass/confidence values.
+4. Before trusting this tool's side-effect/idempotency guidance on a real
+   customer estate, re-run this same manual audit against a wider sample --
+   this fixture's own data shows the failure rate for delegate-call read-only
+   claims is roughly 2 in 3, which is far too high to accept the "rule,
+   confidence 0.85" label at face value.
